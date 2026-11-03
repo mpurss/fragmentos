@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fragmentos del Portal · Afiche QR</title>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;500;800&family=Manrope:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{--blue:#3aa0ff;--blue2:#7fd0ff;--ink:#e8f1ff;--muted:#8da3c4}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#01040c;font-family:Manrope,sans-serif;color:var(--ink);padding:20px}
+  .poster{width:min(100%,560px);aspect-ratio:1/1.414;position:relative;overflow:hidden;border-radius:18px;padding:44px 40px;display:flex;flex-direction:column;
+    background:radial-gradient(circle at 70% 28%,#1b5fd6 0%,#0a2a6b 22%,#030b1f 55%,#01040c 100%);box-shadow:0 30px 80px -20px #000}
+  .shard{position:absolute;clip-path:polygon(50% 0,100% 40%,68% 100%,32% 100%,0 40%);background:linear-gradient(160deg,#dff3ff,#3aa0ff 50%,#0b3b8c);filter:drop-shadow(0 0 18px #3aa0ff)}
+  .k{font:500 10px 'JetBrains Mono',monospace;letter-spacing:.4em;color:var(--blue2);text-transform:uppercase}
+  h1{font:800 54px/0.9 Unbounded,sans-serif;margin:16px 0 0;text-transform:uppercase;letter-spacing:-.03em}
+  h1 span{display:block;font-weight:300;font-size:18px;letter-spacing:.35em;color:var(--blue2);margin:10px 0 8px}
+  p.lead{color:#c3d3ee;font-size:15px;line-height:1.5;max-width:30ch;margin:18px 0 0}
+  .bottom{margin-top:auto;display:flex;gap:22px;align-items:flex-end}
+  #qr{background:#fff;padding:12px;border-radius:14px;flex:none}
+  #qr img,#qr canvas{display:block;width:150px!important;height:150px!important}
+  ol{margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:#d0def5}
+  ol b{color:#fff}
+  .foot{margin-top:18px;font:500 9px 'JetBrains Mono',monospace;letter-spacing:.22em;color:#6c80a3;text-transform:uppercase}
+  .url{font:500 10px 'JetBrains Mono',monospace;color:var(--blue2);word-break:break-all;margin-top:8px}
+  @media print{body{background:#fff;padding:0}.poster{box-shadow:none;border-radius:0;width:100%}}
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="shard" style="width:120px;height:170px;right:44px;top:70px;transform:rotate(18deg)"></div>
+  <div class="shard" style="width:60px;height:90px;right:150px;top:210px;transform:rotate(-30deg);opacity:.85"></div>
+  <div class="shard" style="width:40px;height:60px;right:30px;top:260px;transform:rotate(60deg);opacity:.7"></div>
+  <div class="k">Experiencia 3D para celular</div>
+  <h1>Fragmentos<span>DEL</span>Portal</h1>
+  <p class="lead">La realidad se rompió. Atravesá tres mundos, el océano, el museo y la casa embrujada, y recuperá los fragmentos azules para volver.</p>
+  <div class="bottom">
+    <div id="qr"></div>
+    <div>
+      <ol>
+        <li><b>Escaneá</b> el código con la cámara.</li>
+        <li>Usá <b>auriculares</b> y aceptá los permisos.</li>
+        <li><b>Mové el celular</b> para mirar y caminá con el pulgar.</li>
+        <li>Hacé silencio. <b>Algo escucha.</b></li>
+      </ol>
+      <div class="url" id="url"></div>
+    </div>
+  </div>
+  <div class="foot">Milagros Urssino · Diseño y Programación Web II</div>
+</div>
+<script>
+  // El QR apunta al index.html publicado en la misma carpeta que este afiche
+  var target = new URL('index.html', location.href).href;
+  if (location.protocol === 'file:') target = 'https://TU-USUARIO.github.io/TU-REPO/';
+  document.getElementById('url').textContent = target.replace(/index\.html$/, '');
+  new QRCode(document.getElementById('qr'), { text: target.replace(/index\.html$/, ''), width: 300, height: 300, colorDark: '#03122b', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+</script>
+</body>
+</html>
