@@ -456,20 +456,26 @@ const Gyro = {
   yaw: 0, pitch: 0, yawOffset: 0, screen: 0,
   _e: new THREE.Euler(), _q1: new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)), _q0: new THREE.Quaternion(), _z: new THREE.Vector3(0, 0, 1),
   async request() {
+    let ok = true;
     try {
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        const r = await DeviceOrientationEvent.requestPermission(); // iOS 13+
-        if (r !== 'granted') return false;
+        // iOS 13+ (y Chrome reciente también la expone): si falla o la niega, igual escuchamos
+        // los eventos: en muchos Android llegan aunque la promesa diga otra cosa.
+        try { ok = (await DeviceOrientationEvent.requestPermission()) === 'granted'; } catch (e) { ok = false; }
       }
       if (typeof DeviceOrientationEvent === 'undefined') return false;
       window.addEventListener('deviceorientation', (e) => this.onEvent(e), true);
+      window.addEventListener('deviceorientationabsolute', (e) => this.onEvent(e, true), true); // respaldo Android
       window.addEventListener('orientationchange', () => (this.screen = (screen.orientation ? screen.orientation.angle : window.orientation) || 0));
       this.screen = (screen.orientation ? screen.orientation.angle : window.orientation) || 0;
-      return true;
+      if (!ok) await new Promise((r) => setTimeout(r, 600));   // ¿llegó algún evento igual?
+      return ok || this.active;
     } catch (e) { return false; }
   },
-  onEvent(e) {
+  onEvent(e, abs = false) {
     if (e.alpha == null && e.beta == null) return;
+    if (abs) { if (this.relOk) return; } else if (e.alpha != null) { if (!this.relOk && this.has) this.has = false; this.relOk = true; } else if (this.absOk) return;
+    if (abs) this.absOk = true;
     const D = THREE.MathUtils.DEG2RAD;
     State.orientationData.alpha = e.alpha || 0; State.orientationData.beta = e.beta || 0; State.orientationData.gamma = e.gamma || 0;
     this._e.set((e.beta || 0) * D, (e.alpha || 0) * D, -(e.gamma || 0) * D, 'YXZ');
