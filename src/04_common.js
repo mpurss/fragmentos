@@ -26,6 +26,51 @@ function haloTex() {
   _haloTex.userData.keep = true; return _haloTex;
 }
 /** Fragmento coleccionable azul (mismo diseño en los 3 mundos) */
+/**
+ * Parte el cristal del modelo en 3 piezas sólidas (punta superior + dos mitades inferiores)
+ * que encajan exactamente: cada fragmento del juego es UNA parte del mismo diamante.
+ * Las caras de fractura (tapas) usan un material aparte, más brillante.
+ */
+let _pieces = null;
+function crystalPieces() {
+  if (_pieces) return _pieces;
+  const wrap = Assets.get('crystal', { size: 1 }); wrap.updateMatrixWorld(true);
+  let mesh = null; wrap.traverse((o) => { if (o.isMesh && !mesh) mesh = o; });
+  const g = (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(mesh.matrixWorld);
+  g.translate(0, -0.5, 0);
+  const P = g.attributes.position, UV = g.attributes.uv; const V = (i) => new THREE.Vector3().fromBufferAttribute(P, i);
+  // vértices clave: punta, base y el "ecuador"
+  let T = V(0), B = V(0); for (let i = 0; i < P.count; i++) { const v = V(i); if (v.y > T.y) T = v; if (v.y < B.y) B = v; }
+  const eq = []; for (let i = 0; i < P.count; i++) { const v = V(i); if (Math.abs(v.y) < 0.2 && !eq.some((e) => e.distanceTo(v) < 1e-3)) eq.push(v); }
+  eq.sort((a, b) => Math.atan2(a.z, a.x) - Math.atan2(b.z, b.x));
+  const [e0, , e2] = eq; const n = new THREE.Vector3().subVectors(e2, e0).cross(new THREE.Vector3(0, 1, 0));
+  const side = (c) => Math.sign(n.dot(c.clone().sub(e0)) || 1);
+  const parts = [{ tris: [], caps: [] }, { tris: [], caps: [] }, { tris: [], caps: [] }];
+  for (let i = 0; i < P.count; i += 3) {
+    const tri = [i, i + 1, i + 2]; const c = V(i).add(V(i + 1)).add(V(i + 2)).divideScalar(3);
+    parts[c.y > 0 ? 0 : side(c) > 0 ? 1 : 2].tris.push(tri);
+  }
+  const eSide = (sg) => eq.find((e) => e !== e0 && e !== e2 && side(e) === sg);
+  parts[0].caps.push([e0, e2, eSide(1)], [e0, e2, eSide(-1)]);
+  parts[1].caps.push([e0, e2, eSide(1)], [e0, e2, B]);
+  parts[2].caps.push([e0, e2, eSide(-1)], [e0, e2, B]);
+  _pieces = parts.map((pt) => {
+    const pos = [], uv = [];
+    pt.tris.forEach((t) => t.forEach((k) => { const v = V(k); pos.push(v.x, v.y, v.z); uv.push(UV ? UV.getX(k) : 0, UV ? UV.getY(k) : 0); }));
+    const nOuter = pos.length / 3;
+    const pc = new THREE.Vector3(); for (let k = 0; k < pos.length; k += 3) pc.add(new THREE.Vector3(pos[k], pos[k + 1], pos[k + 2])); pc.divideScalar(pos.length / 3);
+    pt.caps.forEach(([a, b, c]) => {   // tapa de fractura, orientada hacia afuera de la pieza
+      const nrm = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)); const cc = a.clone().add(b).add(c).divideScalar(3);
+      const tri = nrm.dot(cc.sub(pc)) < 0 ? [a, c, b] : [a, b, c]; tri.forEach((v) => { pos.push(v.x, v.y, v.z); uv.push(0.5, 0.5); });
+    });
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.addGroup(0, nOuter, 0); geo.addGroup(nOuter, pos.length / 3 - nOuter, 1);
+    geo.translate(-pc.x, -pc.y, -pc.z); geo.computeVertexNormals();
+    return { geo, offset: pc, mat: mesh.material };
+  });
+  return _pieces;
+}
+
 function makeFragment(variant = 0, withLight = true) {
   const grp = new THREE.Group(); grp.name = 'fragment';
   const shard = new THREE.Mesh(shardGeometry(variant + 1), fragMat());
@@ -35,14 +80,15 @@ function makeFragment(variant = 0, withLight = true) {
   halo.scale.setScalar(1.6);
   grp.add(shard, core, chip, halo);
   if (withLight) { const l = new THREE.PointLight(0x3aa0ff, 2.2, 6, 1.6); grp.add(l); grp.userData.light = l; }
-  // modelo de cristal (si cargó): reemplaza la geometría procedural, teñido del AZUL de los fragmentos
+  // modelo de cristal (si cargó): cada fragmento es UNA pieza del mismo diamante, en el AZUL de los fragmentos
   if (Assets.has('crystal')) {
-    const tint = (m) => { m.color = new THREE.Color(FRAG_BLUE).lerp(new THREE.Color(0xffffff), 0.35); m.emissive = new THREE.Color(0x0b55ff); m.emissiveIntensity = 0.55; m.roughness = 0.2; m.metalness = 0.1; };
-    const c1 = Assets.ownMaterials(Assets.get('crystal', { size: 0.95 }), tint); c1.position.y = -0.47;
-    const c2 = Assets.ownMaterials(Assets.get('crystal', { size: 0.34 }), tint); c2.position.y = -0.17;
-    shard.geometry.dispose(); shard.geometry = new THREE.BufferGeometry(); shard.add(c1);   // el grupo 'shard' sigue girando
-    chip.geometry.dispose(); chip.geometry = new THREE.BufferGeometry(); chip.add(c2);
-    core.visible = false;
+    const pc = crystalPieces()[variant % 3]; const S = 1.25;
+    const outer = pc.mat.clone(); outer.color = new THREE.Color(FRAG_BLUE).lerp(new THREE.Color(0xffffff), 0.35); outer.emissive = new THREE.Color(0x0b55ff); outer.emissiveIntensity = 0.55; outer.roughness = 0.2; outer.metalness = 0.1; outer.side = THREE.DoubleSide;
+    const crack = new THREE.MeshStandardMaterial({ color: 0xd8f0ff, emissive: 0x3aa0ff, emissiveIntensity: 0.9, roughness: 0.35, flatShading: true, side: THREE.DoubleSide });
+    const piece = new THREE.Mesh(pc.geo, [outer, crack]); piece.scale.setScalar(S); piece.userData.sharedGeo = true; piece.castShadow = true;
+    shard.geometry.dispose(); shard.geometry = new THREE.BufferGeometry(); shard.add(piece);
+    chip.visible = false; core.visible = false;
+    grp.userData.piece = piece; grp.userData.pieceOffset = pc.offset.clone().multiplyScalar(S);   // dónde va la pieza dentro del diamante completo
   }
   grp.userData.shard = shard;
   grp.userData.update = (t) => { shard.rotation.y = t * 0.9; core.rotation.y = -t * 1.3; chip.rotation.y = t * 1.6; grp.position.y = (grp.userData.baseY ?? grp.position.y) + Math.sin(t * 2) * 0.06; halo.material.opacity = 0.65 + Math.sin(t * 3) * 0.2; };

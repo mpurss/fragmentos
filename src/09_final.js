@@ -29,10 +29,10 @@ class FinalWorld extends BaseWorld {
       if (Math.hypot(Player.pos.x, Player.pos.z + 3) < 3.4) { this.phase = 'fuse'; Audio.sfx.portalOpen(); haptic([50, 50, 50, 50, 300]); HUD.toast('Los fragmentos se están uniendo…', 2400); }
     } else if (this.phase === 'fuse') {
       this.fuseT += dt; const k = Math.min(this.fuseT / 3.2, 1); const r = 1.1 * (1 - k * k);
-      this.frags.forEach((f, i) => { const a = t * (0.8 + k * 9) + (i * TAU) / 3; f.position.set(C.x + Math.cos(a) * r, C.y, C.z + Math.sin(a) * r); f.userData.shard.rotation.y = t * (1 + k * 8); f.rotation.z = ((i - 1) * 0.5) * k; });
+      this.frags.forEach((f, i) => { const a = t * (0.8 + k * 9) + (i * TAU) / 3; f.position.set(C.x + Math.cos(a) * r, C.y, C.z + Math.sin(a) * r); f.userData.shard.rotation.y = t * (1 + k * 8); if (f.userData.piece) f.userData.piece.position.copy(f.userData.pieceOffset).multiplyScalar(k * k); else f.rotation.z = ((i - 1) * 0.5) * k; });   // las piezas van a su lugar en el diamante
       if (k >= 1) {
         this.phase = 'fused'; HUD.flash(true); setTimeout(() => HUD.flash(false), 250); Audio.sfx.collect(); haptic(300);
-        this.frags.forEach((f, i) => { f.position.copy(C).add(new THREE.Vector3((i - 1) * 0.12, (i % 2) * 0.1, 0)); f.rotation.set(0, 0, (i - 1) * 0.55); f.scale.setScalar(0.9); });
+        this.frags.forEach((f, i) => { if (f.userData.piece) { f.position.copy(C); f.rotation.set(0, 0, 0); f.userData.piece.position.copy(f.userData.pieceOffset); f.userData.shard.rotation.y = 0; if (i) f.children.forEach((c) => { if (c.isSprite || c.isLight) c.visible = false; }); } else { f.position.copy(C).add(new THREE.Vector3((i - 1) * 0.12, (i % 2) * 0.1, 0)); f.rotation.set(0, 0, (i - 1) * 0.55); } f.scale.setScalar(0.9); });   // un solo diamante completo
         setTimeout(() => { this.portal.unlock(); HUD.toast('El portal de regreso está abierto', 2600); HUD.objective('<b>Atravesá el portal</b> para volver a tu realidad.'); }, 900);
       }
     } else {
