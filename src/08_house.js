@@ -325,13 +325,13 @@ class HouseWorld extends BaseWorld {
     // sacudón de cámara
     if (this.shake > 0) { camera.position.x += rand(-1, 1) * this.shake; camera.position.y += rand(-1, 1) * this.shake; camera.rotation.z += rand(-1, 1) * this.shake * 0.3; if (this.phase !== 'collapse') this.shake = Math.max(0, this.shake - dt * 0.15); }
     // ruido: micrófono + pasos rápidos
-    const thr = Math.max(State.gameplay.noiseThreshold + 0.12, 0.42);   // más tolerante: solo ruidos fuertes (voz alta, golpes)
+    const thr = Math.max(State.gameplay.noiseThreshold + 0.07, 0.34);   // más tolerante: solo ruidos fuertes (voz alta, golpes)
     const noise = Math.max(State.audioMetrics.volume, Player.noise);
     HUD.meter(this.phase !== 'collapse', 'RUIDO', noise, thr, noise > thr ? 'var(--danger)' : 'var(--blue)');
     if (!this.scaring && this.phase === 'explore') {
       const grace = this.graceT > 0; this.graceT = Math.max(0, (this.graceT || 0) - dt);
       if (noise > thr && !grace) this.heard += dt; else this.heard = Math.max(0, this.heard - dt * 0.8);
-      if (this.heard > 0.9) { this.heard = 0; this.hear(Player.pos); }
+      if (this.heard > 0.6) { this.heard = 0; this.hear(Player.pos); }
       this.updateEntity(t, dt);
     }
     // eventos ambientales
