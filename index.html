@@ -762,20 +762,21 @@ function crackOutline(len, maxW, segs, seed = 1) {
  * Losa de piso fracturada: la grieta es un HUECO REAL extruido (paredes internas
  * con profundidad), con fondo luminoso, sombreado por profundidad y escombros.
  */
-function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 3, glow = 0x2f8bff } = {}) {
+function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 3, glow = 0x2f8bff, rect = null, branches = true } = {}) {
   const grp = new THREE.Group(); grp.name = 'crack';
   const outer = new THREE.Shape(); const N = 28;
-  for (let i = 0; i < N; i++) { const a = (i / N) * TAU, r = radius * (0.9 + Math.sin(i * 2.7 + seed) * 0.06 + Math.random() * 0.05); i ? outer.lineTo(Math.cos(a) * r, Math.sin(a) * r) : outer.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+  if (rect) { const [a, b] = rect; outer.moveTo(-a / 2, -b / 2); outer.lineTo(a / 2, -b / 2); outer.lineTo(a / 2, b / 2); outer.lineTo(-a / 2, b / 2); outer.lineTo(-a / 2, -b / 2); } // losa rectangular (pared)
+  else for (let i = 0; i < N; i++) { const a = (i / N) * TAU, r = radius * (0.9 + Math.sin(i * 2.7 + seed) * 0.06 + Math.random() * 0.05); i ? outer.lineTo(Math.cos(a) * r, Math.sin(a) * r) : outer.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
   const main = crackOutline(len, width, 18, seed); outer.holes.push(new THREE.Path(main));
   // ramificaciones laterales (huecos menores)
   const branch1 = crackOutline(1.7, 0.28, 7, seed + 2).map((v) => new THREE.Vector2(v.x * 0.9 + 1.2, v.y + v.x * 0.55 + 1.3));
   const branch2 = crackOutline(1.4, 0.22, 6, seed + 5).map((v) => new THREE.Vector2(v.x * 0.9 - 1.5, v.y - v.x * 0.6 - 1.25));
-  outer.holes.push(new THREE.Path(branch1), new THREE.Path(branch2));
+  if (branches) outer.holes.push(new THREE.Path(branch1), new THREE.Path(branch2));
   const geo = new THREE.ExtrudeGeometry(outer, { depth, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.03, bevelSegments: 1, curveSegments: 1 });
   geo.rotateX(Math.PI / 2); // la extrusión va hacia abajo (Y negativo)
   // sombreado por profundidad: oscuro arriba en las paredes, teñido de azul cerca del fondo
   const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
-  const rock = new THREE.Color(0x5d6372), deep = new THREE.Color(0x05070d), lit = new THREE.Color(0x1d5bd8);
+  const rock = new THREE.Color(rect ? 0xb9a58a : 0x5d6372), deep = new THREE.Color(0x05070d), lit = new THREE.Color(0x1d5bd8);
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i); const k = clamp(-y / depth, 0, 1);
     const c = y > -0.05 ? rock.clone().multiplyScalar(0.85 + Math.random() * 0.25) : deep.clone().lerp(lit, Math.pow(k, 2.2));
@@ -794,7 +795,7 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
   }
   const light = new THREE.PointLight(0x3aa0ff, 14, 9, 1.3); light.position.set(0, -depth * 0.6, 0); grp.add(light);
   // placas fracturadas levantadas e inclinadas sobre el borde (superficie quebrada)
-  const lipMat = new THREE.MeshStandardMaterial({ color: 0x5d6372, flatShading: true, roughness: 0.95 });
+  const lipMat = new THREE.MeshStandardMaterial({ color: rect ? 0xa8957b : 0x5d6372, flatShading: true, roughness: 0.95 });
   for (let i = 1; i < main.length - 1; i += 1) {
     const a = main[i], b = main[(i + 1) % main.length]; if (a.distanceTo(b) > 1.2) continue;
     const mid = a.clone().add(b).multiplyScalar(0.5); const along = b.clone().sub(a); const len2 = along.length();
@@ -806,8 +807,8 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
     plate.rotateX(-(0.12 + Math.random() * 0.28) * Math.sign(nrm.y || 1) * (Math.random() < 0.5 ? 1 : 0.4));
     plate.rotateZ(rand(-0.08, 0.08)); plate.castShadow = true; plate.receiveShadow = true; grp.add(plate);
   }
-  const debrisMat = M.std(0x4a4f5c, { roughness: 1 });
-  for (let i = 0; i < 30; i++) {
+  const debrisMat = M.std(rect ? 0x8a7a64 : 0x4a4f5c, { roughness: 1 });
+  for (let i = 0; i < (rect ? 0 : 30); i++) {   // en una pared no hay escombros 'apoyados' sobre la cara
     const v = main[Math.floor(Math.random() * main.length)];
     const d = new THREE.Mesh(jitter(new THREE.DodecahedronGeometry(rand(0.06, 0.22), 0), 0.03), debrisMat);
     d.position.set(v.x + rand(-0.6, 0.6), rand(0.02, 0.12), v.y + rand(-0.8, 0.8)); d.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3)); d.castShadow = true; grp.add(d);
@@ -939,48 +940,113 @@ class TitleScene extends BaseWorld {
   }
 }
 
-/** MUNDO 0 — La grieta se abre en tu realidad (cámara trasera de fondo = AR) */
+/** MUNDO 0 — El cuarto del protagonista: la grieta se abre en la pared (vista 360° con el celular) */
 class IntroWorld extends BaseWorld {
   build() {
-    const s = this.scene;
-    if (CamFeed.ok) { CamFeed.fit(); s.background = CamFeed.texture; }
-    else { s.background = new THREE.Color(0x05080f); s.fog = new THREE.FogExp2(0x05080f, 0.06); s.add(starfield(800, 70)); }
-    s.add(new THREE.HemisphereLight(0xbfd8ff, 0x1a1a22, 1.1));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(4, 8, 3); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
-    Object.assign(sun.shadow.camera, { left: -7, right: 7, top: 7, bottom: -7 }); s.add(sun);
-    if (!CamFeed.ok) {
-      const ground = new THREE.Mesh(new THREE.CircleGeometry(40, 48), new THREE.MeshStandardMaterial({ color: 0x0b1020, roughness: 0.9 }));
-      ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; s.add(ground);
-      const grid = new THREE.PolarGridHelper(14, 16, 8, 64, 0x1d3b66, 0x0f2240); grid.position.y = 0.002; s.add(grid);
+    const s = this.scene; this.boxes = [];
+    s.background = new THREE.Color(0x07070c); s.fog = new THREE.Fog(0x07070c, 8, 16);
+    s.add(new THREE.HemisphereLight(0xffe6c8, 0x2a2018, 0.55));
+    const W = 5, D = 6, H = 2.8, ZW = -3; // cuarto: x[-2.5,2.5] z[-3,3]
+    // --- paredes, piso y techo ---
+    const plaster = canvasTex(256, 256, (g) => { g.fillStyle = '#b9a58a'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(90,70,50,${Math.random() * 0.08})`; g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2); } g.strokeStyle = 'rgba(255,255,255,.08)'; for (let x = 0; x < 256; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); } }, [2, 1]);
+    const wallMat = new THREE.MeshStandardMaterial({ map: plaster, roughness: 0.95 });
+    const wall = (x, z, w, d) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, H, d), wallMat); m.position.set(x, H / 2, z); m.receiveShadow = true; s.add(m); this.boxes.push(box(x, z, w, d)); };
+    wall(-W / 2 - 0.1, 0, 0.2, D); wall(W / 2 + 0.1, 0, 0.2, D); wall(0, D / 2 + 0.1, W, 0.2);
+    const wood = canvasTex(256, 256, (g) => { for (let i = 0; i < 8; i++) { g.fillStyle = `hsl(28,${35 + Math.random() * 10}%,${30 + Math.random() * 8}%)`; g.fillRect(0, i * 32, 256, 31); g.fillStyle = '#2a1a0e'; g.fillRect(0, i * 32 + 31, 256, 1); } }, [3, 4]);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D + 2), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.7 })); floor.rotation.x = -Math.PI / 2; floor.position.z = -1; floor.receiveShadow = true; s.add(floor);
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), M.std(0xd8cfc0)); ceil.rotation.x = Math.PI / 2; ceil.position.y = H; s.add(ceil);
+    // --- pared del fondo: una losa con una GRIETA 3D real (hueco con profundidad) ---
+    this.crack = makeCrack({ rect: [H, W], depth: 0.45, len: 2.35, width: 1.3, seed: 7, branches: false });
+    this.crack.rotation.x = Math.PI / 2;                       // la cara mira hacia el cuarto
+    const holder = new THREE.Group(); holder.rotation.z = Math.PI / 2; holder.position.set(0, H / 2, ZW); holder.add(this.crack); s.add(holder);
+    this.holder = holder; this.crackLight = this.crack.children.find((o) => o.isPointLight);
+    // detrás de la pared: el vacío azul del portal
+    const voidG = new THREE.Mesh(new THREE.PlaneGeometry(6, 4), new THREE.MeshBasicMaterial({ color: 0x0b3b8c })); voidG.position.set(0, H / 2, ZW - 1.4); s.add(voidG);
+    const voidL = new THREE.PointLight(0x3aa0ff, 0, 6, 1.5); voidL.position.set(0, 1.2, ZW - 0.8); s.add(voidL); this.voidL = voidL;
+    // buscar el paso transitable de la grieta a la altura del pecho
+    holder.updateMatrixWorld(true);
+    let best = [0, 0], run = null;
+    for (let x = -2.3; x <= 2.3; x += 0.02) {
+      const l = this.crack.worldToLocal(new THREE.Vector3(x, 1.1, ZW)); const over = this.crack.userData.isOver(l.x, l.z);
+      if (over && run == null) run = x; if ((!over || x > 2.28) && run != null) { if (x - run > best[1] - best[0]) best = [run, x]; run = null; }
     }
-    this.crack = makeCrack({ radius: 4.6, depth: 3.2, len: 7.2, width: 2.1, seed: 5 });
-    this.crack.position.set(0, 0, -5); this.crack.rotation.y = 0.25; s.add(this.crack);
-    // los tres fragmentos fantasma muestran el objetivo
-    this.ghosts = [0, 1, 2].map((i) => { const f = makeFragment(i, false); f.scale.setScalar(0.7); f.traverse((o) => o.material && (o.material = o.material.clone(), o.material.opacity = 0.35)); s.add(f); return f; });
-    Player.reset(0, 1.2, 0, []); Look.dragPitch = -0.35; camera.position.set(0, 1.6, 1.2);
-    this.falling = false; this.fallT = 0;
+    this.gap = { c: (best[0] + best[1]) / 2, hw: Math.max(0.18, (best[1] - best[0]) / 2) };
+    this.boxes.push({ x0: -W / 2, x1: this.gap.c - this.gap.hw, z0: ZW - 0.5, z1: ZW + 0.02 }, { x0: this.gap.c + this.gap.hw, x1: W / 2, z0: ZW - 0.5, z1: ZW + 0.02 });
+    // la pared intacta tapa la grieta hasta que se rompe (pedazos que caen)
+    const outline = this.crack.userData.outline; this.shards = [];
+    const shardMat = new THREE.MeshStandardMaterial({ map: plaster, roughness: 0.95, side: THREE.DoubleSide });
+    const cx = outline.reduce((a, v) => a + v.x, 0) / outline.length, cy = outline.reduce((a, v) => a + v.y, 0) / outline.length;
+    for (let i = 0; i < outline.length; i++) {
+      const a = outline[i], b = outline[(i + 1) % outline.length];
+      const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(cx, 0.05, cy), new THREE.Vector3(a.x, 0.05, a.y), new THREE.Vector3(b.x, 0.05, b.y)]); g.computeVertexNormals();
+      const m = new THREE.Mesh(g, shardMat); this.crack.add(m); this.shards.push({ m, v: new THREE.Vector3(rand(0, 1.2), rand(1, 2.2), rand(-0.6, 0.6)), spin: rand(-3, 3) });
+    }
+    this.crack.children.forEach((o) => { if (o.isPoints || (o.material && o.material.blending === THREE.AdditiveBlending)) o.visible = false; });
+    // --- muebles del cuarto ---
+    const add = (geo, mat, x, y, z, ry = 0, collide) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; s.add(m); if (collide) this.boxes.push(box(x, z, collide[0], collide[1])); return m; };
+    add(new THREE.BoxGeometry(1.5, 0.4, 2.1), M.std(0x6a4a30), -1.7, 0.2, 1.6, 0, [1.5, 2.1]);
+    add(new THREE.BoxGeometry(1.42, 0.22, 2.0), M.std(0x2f4f8a, { roughness: 1 }), -1.7, 0.5, 1.65);
+    add(new THREE.BoxGeometry(0.9, 0.16, 0.45), M.std(0xeeeeee, { roughness: 1 }), -1.7, 0.67, 2.4);
+    add(new THREE.BoxGeometry(1.5, 0.9, 0.08), M.std(0x5a3e28), -1.7, 0.7, 2.68);
+    add(new THREE.BoxGeometry(1.3, 0.06, 0.6), M.std(0xd9c7a8), 1.85, 0.75, 0.3, Math.PI / 2, [0.6, 1.3]);
+    for (const [lx, lz] of [[1.6, -0.25], [2.1, -0.25], [1.6, 0.85], [2.1, 0.85]]) add(new THREE.BoxGeometry(0.05, 0.75, 0.05), M.std(0xd9c7a8), lx, 0.37, lz);
+    const laptop = add(new THREE.BoxGeometry(0.34, 0.02, 0.24), M.std(0x2a2d33, { metalness: 0.6 }), 1.85, 0.79, 0.3);
+    const screen = add(new THREE.PlaneGeometry(0.34, 0.22), new THREE.MeshBasicMaterial({ color: 0x3aa0ff }), 1.97, 0.9, 0.3, -Math.PI / 2); screen.rotation.z = 0.2;
+    this.lamp = new THREE.PointLight(0xffc27a, 4, 5, 1.6); this.lamp.position.set(1.9, 1.25, 0.8); this.lamp.castShadow = true; this.lamp.shadow.mapSize.set(512, 512); s.add(this.lamp);
+    add(new THREE.ConeGeometry(0.14, 0.18, 10, 1, true), M.std(0xf0e0b0, { side: THREE.DoubleSide, emissive: 0x6a5020 }), 1.9, 1.15, 0.8);
+    add(new THREE.CylinderGeometry(0.015, 0.015, 0.35, 6), M.std(0x333333), 1.9, 0.95, 0.8);
+    add(new THREE.BoxGeometry(0.5, 0.06, 0.5), M.std(0x333a44), 1.3, 0.47, 0.3, 0, [0.5, 0.5]); add(new THREE.BoxGeometry(0.5, 0.5, 0.06), M.std(0x333a44), 1.08, 0.75, 0.3, Math.PI / 2);
+    add(new THREE.BoxGeometry(0.6, 2.0, 1.2), M.std(0x8a6a4a), 2.15, 1.0, 2.2, 0, [0.6, 1.2]);
+    const shelf = add(new THREE.BoxGeometry(0.3, 1.6, 0.9), M.std(0x5a3e28), -2.3, 0.8, -1.4, 0, [0.35, 0.9]);
+    for (let r = 0; r < 4; r++) for (let b = 0; b < 5; b++) add(new THREE.BoxGeometry(0.18, rand(0.18, 0.28), 0.12), M.std([0xb03a2e, 0x2e6eb0, 0xe0b040, 0x3a8a4a][(r + b) % 4]), -2.25, 0.25 + r * 0.38, -1.75 + b * 0.15);
+    const rug = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24), M.std(0x8a3a4a, { roughness: 1 })); rug.rotation.x = -Math.PI / 2; rug.position.set(0, 0.005, 0.2); s.add(rug);
+    // ventana con la luna y pósters
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.0), new THREE.MeshBasicMaterial({ map: canvasTex(256, 232, (g) => { const gr = g.createLinearGradient(0, 0, 0, 232); gr.addColorStop(0, '#0a1430'); gr.addColorStop(1, '#22305a'); g.fillStyle = gr; g.fillRect(0, 0, 256, 232); g.fillStyle = '#f4ecd0'; g.beginPath(); g.arc(180, 60, 26, 0, TAU); g.fill(); for (let i = 0; i < 60; i++) { g.fillStyle = '#fff'; g.fillRect(Math.random() * 256, Math.random() * 140, 1.5, 1.5); } g.fillStyle = '#05070f'; for (let x = 0; x < 256; x += 22) g.fillRect(x, 170 - Math.random() * 50, 18, 232); g.fillStyle = '#4a3a2a'; g.fillRect(124, 0, 8, 232); g.fillRect(0, 112, 256, 8); }) }));
+    win.position.set(-2.39, 1.55, -0.2); win.rotation.y = Math.PI / 2; s.add(win);
+    const moon = new THREE.SpotLight(0x8fa8e0, 6, 6, 0.6, 0.8, 1.5); moon.position.set(-2.3, 2, -0.2); moon.target.position.set(0, 0, 0.2); s.add(moon, moon.target);
+    const poster = (x, z, ry, col, txt) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.85), new THREE.MeshStandardMaterial({ map: canvasTex(150, 212, (g) => { g.fillStyle = col; g.fillRect(0, 0, 150, 212); g.fillStyle = 'rgba(255,255,255,.85)'; g.font = 'bold 22px Unbounded, sans-serif'; g.fillText(txt, 12, 190); g.beginPath(); g.arc(75, 80, 40, 0, TAU); g.fill(); }) })); m.position.set(x, 1.7, z); m.rotation.y = ry; s.add(m); };
+    poster(2.39, -1.4, -Math.PI / 2, '#3a2a6a', 'SPACE'); poster(-0.8, 2.99, Math.PI, '#a03a2a', 'ROCK'); poster(0.6, 2.99, Math.PI, '#2a6a5a', 'OCEAN');
+    const ceilLamp = new THREE.PointLight(0xffe2b8, 3, 7, 1.6); ceilLamp.position.set(0, 2.5, 0.5); s.add(ceilLamp); this.ceilLamp = ceilLamp;
+    add(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff0d0 }), 0, 2.62, 0.5);
+    // fragmentos fantasma flotando detrás de la grieta (el objetivo)
+    this.ghosts = [0, 1, 2].map((i) => { const f = makeFragment(i, false); f.scale.setScalar(0.35); s.add(f); f.visible = false; return f; });
+    Player.reset(0, 0.6, 0, this.boxes); Look.dragPitch = 0; camera.position.set(0, 1.6, 0.6);
+    this.t0 = null; this.opened = false; this.went = false;
   }
   enter() {
-    HUD.setWorld('Mundo 0', 'La grieta'); Audio.ambient('intro');
-    HUD.objective('Una grieta se abrió en tu realidad.<br><b>Caminá hasta ella y caé adentro.</b>');
-    HUD.toast(CamFeed.ok ? 'La grieta apareció en tu habitación' : 'Arrastrá a la izquierda para moverte', 3200);
+    HUD.setWorld('Mundo 0', 'Tu cuarto'); Audio.ambient('intro'); Input.walkEnabled = true;
+    HUD.objective('Es de noche en tu cuarto. <b>Mové el celular para mirar alrededor.</b>');
+    setTimeout(() => { if (!Gyro.active) HUD.toast('Arrastrá el dedo a la derecha para mirar · abajo a la izquierda para caminar', 4200); }, 2500);
   }
   update(t, dt) {
-    if (CamFeed.ok) CamFeed.fit();
+    if (this.t0 == null) this.t0 = t; const k = t - this.t0;
     this.crack.userData.update(t, dt);
-    this.ghosts.forEach((g, i) => { const a = t * 0.6 + (i * TAU) / 3; g.position.set(Math.cos(a) * 1.6, 2.6 + Math.sin(t * 1.3 + i) * 0.2, -5 + Math.sin(a) * 1.6); g.userData.shard.rotation.y = t + i; });
+    // secuencia: la pared cruje → se fisura → se rompe y se abre la grieta
+    if (k > 2.5 && !this._c1) { this._c1 = true; Audio.sfx.rumble(1.5); Audio.sfx.creak(new THREE.Vector3(0, 1.5, -3)); haptic([40, 40, 40]); HUD.toast('Algo cruje en la pared…', 2200); }
+    if (k > 4.5 && !this.opened) {
+      this.opened = true; Audio.sfx.rumble(2.5); Audio.sfx.portalOpen(); haptic([80, 40, 200]);
+      this.crack.children.forEach((o) => (o.visible = true)); this.ghosts.forEach((g) => (g.visible = true));
+      HUD.objective('Una grieta se abrió en la pared.<br><b>Caminá hasta ella y atravesala.</b>');
+    }
+    const shake = k > 2.5 && k < 6.5 ? (k > 4.5 ? 0.025 : 0.008) : 0;
+    if (this.opened) {
+      this.shards.forEach((sh) => { if (sh.m.position.x > -3.2) { sh.v.x -= dt * 9;   // en el espacio local de la grieta, -x es 'abajo'
+        sh.m.position.addScaledVector(sh.v, dt); sh.m.rotation.x += sh.spin * dt; } });
+      this.voidL.intensity = Math.min(8, this.voidL.intensity + dt * 6);
+    }
+    if (this.crackLight) this.crackLight.intensity *= this.opened ? 1 : 0;
+    this.ceilLamp.intensity = k > 2.5 && k < 6 ? (Math.random() < 0.3 ? 0.2 : 3) : 3;
+    this.ghosts.forEach((g, i) => { const a = t * 0.8 + (i * TAU) / 3; g.position.set(this.gap.c + Math.cos(a) * 0.5, 1.4 + Math.sin(a) * 0.5, -3.9); g.userData.shard.rotation.y = t + i; });
     if (this.falling) {
-      this.fallT += dt; applyLook(dt);
-      camera.position.y -= dt * (2 + this.fallT * 9); camera.rotation.x = lerp(camera.rotation.x, -1.2, this.fallT);
-      if (this.fallT > 0.5 && !this.went) { this.went = true; Game.goto('ocean'); }
+      this.fallT += dt; applyLook(dt); camera.position.z -= dt * 4;
+      if (this.fallT > 0.4 && !this.went) { this.went = true; Game.goto('ocean'); }
       return;
     }
     applyLook(dt); Player.update(dt);
-    if (Player.pos.length() > 9) Player.pos.setLength(9);
-    // ¿el jugador está parado sobre el hueco de la grieta?
-    const local = this.crack.worldToLocal(Player.pos.clone());
-    if (this.crack.userData.isOver(local.x, local.z)) {
-      this.falling = true; Audio.sfx.whoosh(); Audio.sfx.rumble(1.5); haptic([60, 40, 200]);
+    if (shake) { camera.position.x += rand(-1, 1) * shake; camera.position.y += rand(-1, 1) * shake; }
+    // atravesar la grieta = cruzar el plano de la pared dentro del hueco
+    if (this.opened && Player.pos.z < -3.15 && Math.abs(Player.pos.x - this.gap.c) < this.gap.hw + 0.1) {
+      this.falling = true; this.fallT = 0; Audio.sfx.whoosh(); haptic([60, 40, 200]);
     }
   }
 }

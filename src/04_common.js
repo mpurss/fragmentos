@@ -145,20 +145,21 @@ function crackOutline(len, maxW, segs, seed = 1) {
  * Losa de piso fracturada: la grieta es un HUECO REAL extruido (paredes internas
  * con profundidad), con fondo luminoso, sombreado por profundidad y escombros.
  */
-function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 3, glow = 0x2f8bff } = {}) {
+function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 3, glow = 0x2f8bff, rect = null, branches = true } = {}) {
   const grp = new THREE.Group(); grp.name = 'crack';
   const outer = new THREE.Shape(); const N = 28;
-  for (let i = 0; i < N; i++) { const a = (i / N) * TAU, r = radius * (0.9 + Math.sin(i * 2.7 + seed) * 0.06 + Math.random() * 0.05); i ? outer.lineTo(Math.cos(a) * r, Math.sin(a) * r) : outer.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+  if (rect) { const [a, b] = rect; outer.moveTo(-a / 2, -b / 2); outer.lineTo(a / 2, -b / 2); outer.lineTo(a / 2, b / 2); outer.lineTo(-a / 2, b / 2); outer.lineTo(-a / 2, -b / 2); } // losa rectangular (pared)
+  else for (let i = 0; i < N; i++) { const a = (i / N) * TAU, r = radius * (0.9 + Math.sin(i * 2.7 + seed) * 0.06 + Math.random() * 0.05); i ? outer.lineTo(Math.cos(a) * r, Math.sin(a) * r) : outer.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
   const main = crackOutline(len, width, 18, seed); outer.holes.push(new THREE.Path(main));
   // ramificaciones laterales (huecos menores)
   const branch1 = crackOutline(1.7, 0.28, 7, seed + 2).map((v) => new THREE.Vector2(v.x * 0.9 + 1.2, v.y + v.x * 0.55 + 1.3));
   const branch2 = crackOutline(1.4, 0.22, 6, seed + 5).map((v) => new THREE.Vector2(v.x * 0.9 - 1.5, v.y - v.x * 0.6 - 1.25));
-  outer.holes.push(new THREE.Path(branch1), new THREE.Path(branch2));
+  if (branches) outer.holes.push(new THREE.Path(branch1), new THREE.Path(branch2));
   const geo = new THREE.ExtrudeGeometry(outer, { depth, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.03, bevelSegments: 1, curveSegments: 1 });
   geo.rotateX(Math.PI / 2); // la extrusión va hacia abajo (Y negativo)
   // sombreado por profundidad: oscuro arriba en las paredes, teñido de azul cerca del fondo
   const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
-  const rock = new THREE.Color(0x5d6372), deep = new THREE.Color(0x05070d), lit = new THREE.Color(0x1d5bd8);
+  const rock = new THREE.Color(rect ? 0xb9a58a : 0x5d6372), deep = new THREE.Color(0x05070d), lit = new THREE.Color(0x1d5bd8);
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i); const k = clamp(-y / depth, 0, 1);
     const c = y > -0.05 ? rock.clone().multiplyScalar(0.85 + Math.random() * 0.25) : deep.clone().lerp(lit, Math.pow(k, 2.2));
@@ -177,7 +178,7 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
   }
   const light = new THREE.PointLight(0x3aa0ff, 14, 9, 1.3); light.position.set(0, -depth * 0.6, 0); grp.add(light);
   // placas fracturadas levantadas e inclinadas sobre el borde (superficie quebrada)
-  const lipMat = new THREE.MeshStandardMaterial({ color: 0x5d6372, flatShading: true, roughness: 0.95 });
+  const lipMat = new THREE.MeshStandardMaterial({ color: rect ? 0xa8957b : 0x5d6372, flatShading: true, roughness: 0.95 });
   for (let i = 1; i < main.length - 1; i += 1) {
     const a = main[i], b = main[(i + 1) % main.length]; if (a.distanceTo(b) > 1.2) continue;
     const mid = a.clone().add(b).multiplyScalar(0.5); const along = b.clone().sub(a); const len2 = along.length();
@@ -189,8 +190,8 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
     plate.rotateX(-(0.12 + Math.random() * 0.28) * Math.sign(nrm.y || 1) * (Math.random() < 0.5 ? 1 : 0.4));
     plate.rotateZ(rand(-0.08, 0.08)); plate.castShadow = true; plate.receiveShadow = true; grp.add(plate);
   }
-  const debrisMat = M.std(0x4a4f5c, { roughness: 1 });
-  for (let i = 0; i < 30; i++) {
+  const debrisMat = M.std(rect ? 0x8a7a64 : 0x4a4f5c, { roughness: 1 });
+  for (let i = 0; i < (rect ? 0 : 30); i++) {   // en una pared no hay escombros 'apoyados' sobre la cara
     const v = main[Math.floor(Math.random() * main.length)];
     const d = new THREE.Mesh(jitter(new THREE.DodecahedronGeometry(rand(0.06, 0.22), 0), 0.03), debrisMat);
     d.position.set(v.x + rand(-0.6, 0.6), rand(0.02, 0.12), v.y + rand(-0.8, 0.8)); d.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3)); d.castShadow = true; grp.add(d);
