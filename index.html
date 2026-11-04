@@ -2189,7 +2189,7 @@ class HouseWorld extends BaseWorld {
     // sacudón de cámara
     if (this.shake > 0) { camera.position.x += rand(-1, 1) * this.shake; camera.position.y += rand(-1, 1) * this.shake; camera.rotation.z += rand(-1, 1) * this.shake * 0.3; if (this.phase !== 'collapse') this.shake = Math.max(0, this.shake - dt * 0.15); }
     // ruido: micrófono + pasos rápidos
-    const thr = Math.max(State.gameplay.noiseThreshold + 0.07, 0.34);   // más tolerante: solo ruidos fuertes (voz alta, golpes)
+    const thr = Math.max((State.gameplay.noiseThreshold + 0.07) * 0.7, 0.24);   // 30% más sensible   // más tolerante: solo ruidos fuertes (voz alta, golpes)
     const noise = Math.max(State.audioMetrics.volume, Player.noise);
     HUD.meter(this.phase !== 'collapse', 'RUIDO', noise, thr, noise > thr ? 'var(--danger)' : 'var(--blue)');
     if (!this.scaring && this.phase === 'explore') {
