@@ -152,7 +152,7 @@ class IntroWorld extends BaseWorld {
     this.ghosts.forEach((g, i) => { const a = t * 0.8 + (i * TAU) / 3; g.position.set(this.gap.c + Math.cos(a) * 0.5, 1.4 + Math.sin(a) * 0.5, -3.9); g.userData.shard.rotation.y = t + i; });
     if (this.falling) {
       this.fallT += dt; applyLook(dt); camera.position.z -= dt * 4;
-      if (this.fallT > 0.4 && !this.went) { this.went = true; Game.goto('ocean'); }
+      if (this.fallT > 0.4 && !this.went && !Game.busy) { this.went = true; Game.goto('ocean'); }
       return;
     }
     applyLook(dt); Player.update(dt);
