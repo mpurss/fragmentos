@@ -147,7 +147,7 @@ const Player = {
     this.pos.x += this.vel.x * dt; this.pos.z += this.vel.z * dt;
     this.collide();
     const sp = Math.hypot(this.vel.x, this.vel.z);
-    this.noise = sp > this.speed * 0.85 ? 0.35 : 0;
+    this.noise = (Input.keys.ShiftLeft || Input.keys.ShiftRight) && sp > this.speed * 0.85 ? 0.7 : 0;   // en el celu, caminar con el joystick es silencioso
     this.bob += sp * dt * 3.2;
     camera.position.set(this.pos.x, this.height + Math.sin(this.bob * 2) * 0.035 * Math.min(sp, 1), this.pos.z);
     if (sp > 0.4) { this.stepT -= dt * sp; if (this.stepT <= 0) { this.stepT = 1.1; if (stepSound) Audio.sfx.step(null, 0.07); } }
