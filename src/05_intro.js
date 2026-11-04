@@ -116,7 +116,7 @@ class IntroWorld extends BaseWorld {
   enter() {
     HUD.setWorld('Mundo 0', 'Tu cuarto'); Audio.ambient('intro'); Input.walkEnabled = true;
     HUD.objective('Es de noche en tu cuarto. <b>Mové el celular para mirar alrededor.</b>');
-    setTimeout(() => { if (!Gyro.active) HUD.toast('Arrastrá el dedo a la derecha para mirar · abajo a la izquierda para caminar', 4200); }, 2500);
+    setTimeout(() => { if (!Gyro.active && Game.world === this) HUD.toast('Arrastrá el dedo a la derecha para mirar · abajo a la izquierda para caminar', 4200); }, 2500);
   }
   update(t, dt) {
     if (this.t0 == null) this.t0 = t; const k = t - this.t0;

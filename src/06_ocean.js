@@ -182,7 +182,7 @@ class OceanWorld extends BaseWorld {
     const c = this.claw; if (c.state !== 'extend') return;
     c.openTarget = 0; c.state = 'retract'; c.extTarget = 0; Audio.sfx.clawClose(); haptic(25);
     // ¿hay un pez realmente entre las pinzas al cerrar?
-    let best = null, bd = 0.62;
+    let best = null, bd = 1.25;   // radio generoso: más fácil en el celu
     for (const f of this.fish) { if (f.caught) continue; const d = f.mesh.position.distanceTo(c.head); if (d < bd) { bd = d; best = f; } }
     if (best) { best.caught = true; c.held = best.mesh; Audio.sfx.catch(); haptic([40, 30, 80]); }
     else HUD.toast('La garra se cerró vacía…', 1400);
@@ -192,9 +192,10 @@ class OceanWorld extends BaseWorld {
   spawnFish(sp, shiny, initial) {
     const mesh = makeFish(sp, shiny); const fwd = new THREE.Vector3(-Math.sin(this.subYaw || 0), 0, -Math.cos(this.subYaw || 0));
     const base = this.subPos ? this.subPos.clone() : new THREE.Vector3(0, -1, 10);
-    const home = base.clone().add(fwd.multiplyScalar(initial ? rand(6, 26) : rand(14, 22))).add(new THREE.Vector3(rand(-12, 12), rand(-2, 2), rand(-12, 12)));
+    const side = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const home = base.clone().add(fwd.clone().multiplyScalar(rand(3.5, 6))).add(side.multiplyScalar(rand(-2.8, 2.8))).add(new THREE.Vector3(0, rand(-1.6, 0.2), 0));
     home.y = Math.max(home.y, seabedY(home.x, home.z) + 1.5);
-    const f = { mesh, sp, shiny, home, pos: mesh.position, vel: new THREE.Vector3(rand(-1, 1), 0, rand(-1, 1)), target: home.clone(), speed: shiny ? 2.0 : rand(0.8, 1.5), skittish: shiny ? 0.9 : rand(0.2, 0.7), caught: false };
+    const f = { mesh, sp, shiny, home, pos: mesh.position, vel: new THREE.Vector3(rand(-1, 1), 0, rand(-1, 1)), target: home.clone(), speed: shiny ? 0.9 : rand(0.45, 0.8), skittish: shiny ? 0.25 : rand(0.02, 0.15), caught: false };
     mesh.position.copy(home).add(new THREE.Vector3(rand(-3, 3), rand(-1, 1), rand(-3, 3)));
     this.scene.add(mesh); this.fish.push(f); return f;
   }
@@ -202,7 +203,7 @@ class OceanWorld extends BaseWorld {
     const c = this.claw;
     for (const f of this.fish) {
       if (f.caught) continue;
-      if (f.pos.distanceTo(f.target) < 1.2) f.target.copy(f.home).add(new THREE.Vector3(rand(-7, 7), rand(-2, 2), rand(-7, 7)));
+      if (f.pos.distanceTo(f.target) < 1.2) f.target.copy(f.home).add(new THREE.Vector3(rand(-1.8, 1.8), rand(-0.6, 0.6), rand(-1.8, 1.8)));
       let spd = f.speed; const desired = f.target.clone().sub(f.pos).normalize();
       // reacción a la garra: algunos peces escapan si la garra se acerca
       const dc = f.pos.distanceTo(c.head);
@@ -214,6 +215,7 @@ class OceanWorld extends BaseWorld {
       const fy = seabedY(f.pos.x, f.pos.z) + 0.8; if (f.pos.y < fy) f.pos.y = fy;
       f.mesh.lookAt(f.pos.clone().add(f.vel)); f.mesh.userData.animate(t, 0.6 + f.vel.length() * 0.5);
       // mantener la población alrededor del submarino
+      if (ds > 8 && ds <= 42 && Math.random() < dt) { const fw = new THREE.Vector3(-Math.sin(this.subYaw), 0, -Math.cos(this.subYaw)); f.home.copy(this.subPos).add(fw.multiplyScalar(rand(3.5, 6))).add(new THREE.Vector3(rand(-2.8, 2.8), rand(-1.6, 0.2), rand(-1.5, 1.5))); f.home.y = Math.max(f.home.y, seabedY(f.home.x, f.home.z) + 1.2); f.target.copy(f.home); }
       if (ds > 42) { const fwd = new THREE.Vector3(-Math.sin(this.subYaw), 0, -Math.cos(this.subYaw)); f.home.copy(this.subPos).add(fwd.multiplyScalar(rand(18, 28))).add(new THREE.Vector3(rand(-14, 14), rand(-2, 2), rand(-14, 14))); f.home.y = Math.max(f.home.y, seabedY(f.home.x, f.home.z) + 1.5); f.pos.copy(f.home); f.target.copy(f.home); }
     }
   }
@@ -297,7 +299,7 @@ class OceanWorld extends BaseWorld {
   enter() {
     HUD.setWorld('Mundo 1', 'Océano'); Audio.ambient('ocean'); Input.walkEnabled = true;
     HUD.objective('Atrapá peces con la garra (0/3).<br>Mantené apretado para extenderla hacia donde tocás, <b>soltá para cerrarla</b>.');
-    setTimeout(() => HUD.toast('Joystick: navegar · Mirá hacia abajo/arriba para bajar o subir', 3600), 2800);
+    setTimeout(() => HUD.toast('Joystick: avanzar y girar · Mirá arriba para subir y abajo para bajar', 3600), 2800);
   }
   update(t, dt) {
     this.t = t;
@@ -306,7 +308,8 @@ class OceanWorld extends BaseWorld {
     this.subYaw -= mv.x * dt * 0.9;
     const thrust = -mv.y * 4.2;
     const fwd = new THREE.Vector3(-Math.sin(this.subYaw), 0, -Math.cos(this.subYaw));
-    const want = fwd.multiplyScalar(thrust); want.y = Math.sin(Look.pitch) * Math.abs(thrust) * 0.8 * Math.sign(thrust || 1);
+    const want = fwd.multiplyScalar(thrust); const pz = this.claw.state === "extend" ? 0 : Math.abs(Look.pitch) > 0.25 ? Math.sign(Look.pitch) * (Math.abs(Look.pitch) - 0.25) : 0;   // zona muerta; quieto mientras usás la garra
+    want.y = clamp(pz * 6, -2.8, 2.8);   // mirar arriba = sube, mirar abajo = baja
     this.subVel.lerp(want, 1 - Math.exp(-1.8 * dt));
     this.prevSub.copy(this.subPos); this.subPos.addScaledVector(this.subVel, dt);
     this.subPos.y = clamp(this.subPos.y, seabedY(this.subPos.x, this.subPos.z) + 2.3, 9);
