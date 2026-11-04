@@ -50,11 +50,15 @@
   <div class="foot">Milagros Urssino · Diseño y Programación Web II</div>
 </div>
 <script>
-  // El QR apunta al index.html publicado en la misma carpeta que este afiche
-  var target = new URL('index.html', location.href).href;
-  if (location.protocol === 'file:') target = 'https://TU-USUARIO.github.io/TU-REPO/';
-  document.getElementById('url').textContent = target.replace(/index\.html$/, '');
-  new QRCode(document.getElementById('qr'), { text: target.replace(/index\.html$/, ''), width: 300, height: 300, colorDark: '#03122b', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  // El QR apunta al index.html publicado en la misma carpeta que este afiche.
+  // Abierto desde el disco o en local, usa la dirección oficial publicada.
+  var OFICIAL = 'https://mpurss.github.io/fragmentos/';
+  var target = new URL('index.html', location.href).href.replace(/index\.html$/, '');
+  if (location.protocol === 'file:' || /^(localhost|127\.)/.test(location.hostname)) target = OFICIAL;
+  document.getElementById('url').textContent = target.replace(/^https?:\/\//, '');
+  var box = document.getElementById('qr');
+  if (window.QRCode) new QRCode(box, { text: target, width: 300, height: 300, colorDark: '#03122b', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.Q });
+  else box.innerHTML = '<img src="qr-fragmentos.png" width="300" height="300" alt="QR al juego">';   // respaldo sin conexión
 </script>
 </body>
 </html>

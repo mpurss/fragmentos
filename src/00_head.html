@@ -36,6 +36,7 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .ld-bar{width:180px; height:2px; background:#ffffff14; overflow:hidden; border-radius:2px}
   .ld-bar i{display:block; height:100%; width:30%; background:var(--blue); animation:ld 1.1s ease-in-out infinite}
+  .ld-bar.real i{animation:none; width:0; transition:width .25s}
   @keyframes ld{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
   .ld-txt{font:500 11px 'JetBrains Mono',monospace; letter-spacing:.3em; color:var(--muted)}
 
@@ -202,6 +203,6 @@
 <section id="ending"><h2 id="endTitle"></h2><p id="endText"></p><a id="again" href="#" onclick="location.reload();return false;">↻ JUGAR DE NUEVO</a></section>
 
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
 </script>
 <script type="module">

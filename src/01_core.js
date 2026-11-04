@@ -107,7 +107,8 @@ function canvasTex(w, h, draw, repeat) {
 /** Libera geometrías, materiales y texturas de un objeto (al cambiar de mundo) */
 function disposeTree(obj) {
   obj.traverse((o) => {
-    if (o.geometry) o.geometry.dispose();
+    if (o.userData.shared) return;                       // geometría y materiales de modelos cacheados
+    if (o.geometry && !o.userData.sharedGeo) o.geometry.dispose();
     if (o.material) {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       mats.forEach((m) => { for (const k in m) { const v = m[k]; if (v && v.isTexture && !v.userData.keep) v.dispose(); } m.dispose(); });

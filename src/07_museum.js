@@ -119,8 +119,14 @@ class MuseumWorld extends BaseWorld {
     for (let i = 0; i < 8; i++) { const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.1, 4), M.std(0xfffaf0)); tooth.rotation.x = Math.PI; tooth.position.set(i % 2 ? 0.19 : -0.19, -0.18, -0.15 - Math.floor(i / 2) * 0.18); this.dinoHead.add(tooth); }
     for (const sx of [-0.2, 0.2]) { const sock = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), M.basic(0x050302)); sock.position.set(sx, 0.15, -0.3); this.dinoHead.add(sock); const glint = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 4), M.basic(0xff3010)); glint.position.set(sx * 1.08, 0.15, -0.33); this.dinoHead.add(glint); }
     d.rotation.y = 0; this.dinoBox = box(0, -3.5, 1.4, 3.8); this.boxes.push(this.dinoBox);
+    // esqueleto real de alosaurio (modelo 3D) en lugar del procedural, si cargó
+    if (Assets.has('dino')) {
+      d.traverse((o) => { if (o.isMesh) o.visible = false; });
+      const sk = Assets.get('dino', { size: 6.2, dim: 'z', rotY: Math.PI }); sk.position.set(0, -0.25, -0.3); d.add(sk);
+      sk.traverse((o) => { if (o.isMesh) o.material.envMapIntensity = 1; });
+    }
     const spot = new THREE.SpotLight(0xfff0d0, 40, 12, 0.5, 0.5, 1.4); spot.position.set(0, 4.8, -1.5); spot.target = d; spot.castShadow = true; spot.shadow.mapSize.set(512, 512); s.add(spot);
-    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.3), new THREE.MeshStandardMaterial({ map: canvasTex(256, 86, (g) => { g.fillStyle = '#c9a24a'; g.fillRect(0, 0, 256, 86); g.fillStyle = '#1a1208'; g.font = 'bold 22px Manrope'; g.fillText('TYRANNOSAURUS', 30, 40); g.font = '15px Manrope'; g.fillText('No lo pierdas de vista.', 40, 66); }) }));
+    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.3), new THREE.MeshStandardMaterial({ map: canvasTex(256, 86, (g) => { g.fillStyle = '#c9a24a'; g.fillRect(0, 0, 256, 86); g.fillStyle = '#1a1208'; g.font = 'bold 22px Manrope'; g.fillText('ALLOSAURUS', 30, 40); g.font = '15px Manrope'; g.fillText('No lo pierdas de vista.', 40, 66); }) }));
     plaque.position.set(0, 0.2, -0.78); plaque.rotation.x = -0.3; s.add(plaque);
     this.dinoT = 0; this.dinoScare = 0;
   }

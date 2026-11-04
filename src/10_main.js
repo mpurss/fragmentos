@@ -73,6 +73,11 @@ function loop() {
   if (Game.world) { Game.world.update(t, dt); renderer.render(Game.world.scene, camera); }
 }
 loop();
-setTimeout(() => $('loader').classList.add('hide'), 350);
-window.__game = { Game, State, Player, Look, camera, THREE, Gyro, Input,
+// precarga de modelos 3D con progreso real; el título aparece cuando terminan (o a los 25 s como máximo)
+{ const bar = document.querySelector('.ld-bar'); bar.classList.add('real'); const fill = bar.querySelector('i');
+  const hide = () => $('loader').classList.add('hide');
+  const to = setTimeout(hide, 25000);
+  Assets.load((k) => { fill.style.width = Math.round(k * 100) + '%'; $('ldTxt').textContent = 'CARGANDO MODELOS 3D · ' + Math.round(k * 100) + '%'; })
+    .then(() => { clearTimeout(to); setTimeout(hide, 250); }); }
+window.__game = { Game, State, Player, Look, camera, THREE, Gyro, Input, Assets,
   step(sec, dt = 1 / 30) { for (let k = 0; k < sec / dt; k++) { gameTime += dt; Game.world.update(gameTime, dt); } } };   // ganchos de depuración

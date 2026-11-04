@@ -172,6 +172,18 @@ class HouseWorld extends BaseWorld {
     const mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.13), new THREE.MeshBasicMaterial({ color: 0x000000 })); mouth.position.set(0, -0.06, 0.15); this.eHead.add(mouth);
     const pale = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.26), new THREE.MeshStandardMaterial({ color: 0x8a8580, roughness: 1, transparent: true, opacity: 0.35 })); pale.position.set(0, 0.02, 0.148); this.eHead.add(pale);
     e.traverse((o) => (o.castShadow = true)); this.scene.add(e);
+    // modelo 'Gaunt Horror Creature' convertido en fantasma: translúcido, pálido y con brillo frío
+    if (Assets.has('gaunt')) {
+      e.traverse((o) => { if (o.isMesh) o.visible = false; });
+      const g = Assets.get('gaunt', { size: 2.35 }); this.ghostMats = [];
+      g.traverse((m) => {
+        if (!m.isMesh) return; const src = m.material;
+        m.material = new THREE.MeshStandardMaterial({ map: src.map, normalMap: src.normalMap, color: 0xcfe0ff, emissive: 0x5b8cff, emissiveIntensity: 0.45, roughness: 0.6, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
+        m.userData.shared = false; m.userData.sharedGeo = true; m.castShadow = false; this.ghostMats.push(m.material);
+      });
+      this.ghost = g; e.add(g);
+      this.ghostLight = new THREE.PointLight(0x7fa8ff, 0.8, 3.5, 1.6); this.ghostLight.position.y = 1.6; e.add(this.ghostLight);
+    }
     // grafo de puntos de recorrido (el ente deambula por toda la casa)
     const N = this.nodes = { F: [0, 0.5], F1: [-2.5, 2], F2: [2.4, 2.2], C1: [0, -5.2], C2: [0, -7.2], L1d: [-2.2, -7.2], L1: [-4.6, -7.2], R1d: [2.2, -7.2], R1: [2.6, -8.8], C3: [0, -10], C4: [0, -13], L2d: [-2.2, -13], L2: [-4.6, -12.8], C5: [0, -15.2], E: [0, -18.8], E2: [2.4, -20.8] };
     this.edges = { F: ['F1', 'F2', 'C1'], F1: ['F'], F2: ['F'], C1: ['F', 'C2'], C2: ['C1', 'L1d', 'R1d', 'C3'], L1d: ['C2', 'L1'], L1: ['L1d'], R1d: ['C2', 'R1'], R1: ['R1d'], C3: ['C2', 'C4'], C4: ['C3', 'L2d', 'C5'], L2d: ['C4', 'L2'], L2: ['L2d'], C5: ['C4', 'E'], E: ['C5', 'E2'], E2: ['E'] };
@@ -220,6 +232,12 @@ class HouseWorld extends BaseWorld {
     this.eArms.forEach((a, i) => (a.rotation.x = Math.sin(t * (en.hunt ? 6 : 1.6) + i * Math.PI) * (en.hunt ? 0.5 : 0.18)));
     this.eHead.rotation.z = Math.sin(t * 0.7) * 0.25 + (Math.random() < 0.02 ? rand(-0.6, 0.6) : 0);
     this.eHead.rotation.y = Math.sin(t * 0.4) * 0.6;
+    if (this.ghost) {   // fantasma: flota, respira y parpadea (más cuando te está cazando)
+      this.ghost.position.y = 0.14 + Math.sin(t * 1.6) * 0.07; this.ghost.rotation.z = Math.sin(t * 0.9) * 0.04;
+      const flick = Math.random() < (en.hunt ? 0.08 : 0.02) ? 0.12 : 1;
+      const op = (0.42 + Math.sin(t * 3.1) * 0.08) * flick; this.ghostMats.forEach((m) => (m.opacity = op));
+      this.ghostLight.intensity = (en.hunt ? 1.6 : 0.8) * flick;
+    }
     const dist = Math.hypot(e.position.x - Player.pos.x, e.position.z - Player.pos.z);
     State.dangerLevel = clamp(1 - dist / 8, 0, 1);
     if (dist < 6) { this.beatT -= dt; if (this.beatT <= 0) { this.beatT = 0.45 + dist * 0.15; Audio.sfx.heartbeat(0.15 + (1 - dist / 6) * 0.45); if (dist < 3) haptic(25); } }

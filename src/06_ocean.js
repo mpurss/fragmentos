@@ -170,6 +170,7 @@ class OceanWorld extends BaseWorld {
     this.claw.aim.copy(local.applyQuaternion(this.sub.quaternion));
   }
   onPointerDown(ndc) {
+    if (this.cine > 0) return true;
     if (this.phase === 'breath') { this.breath.holding = true; return true; }
     if (this.phase === 'fragment') { const h = pick(ndc, [this.frag]); if (h) { this.takeFragment(); return true; } }
     if (this.claw.state !== 'idle') return true;
@@ -298,13 +299,19 @@ class OceanWorld extends BaseWorld {
 
   enter() {
     HUD.setWorld('Mundo 1', 'Océano'); Audio.ambient('ocean'); Input.walkEnabled = true;
+    // toma exterior de 3 s: se ve el submarino (modelo 3D) sumergiéndose antes de pasar a la cabina
+    if (Assets.has('submarine')) {
+      this.ext = Assets.get('submarine', { size: 4.6, dim: 'z', rotY: Math.PI }); this.ext.position.set(0, -1.15, 0.4); this.sub.add(this.ext);
+      this.hidden = this.sub.children.filter((c) => c !== this.ext && (c.isMesh || c.isGroup) && c.visible); this.hidden.forEach((c) => (c.visible = false));
+      this.cine = 3.2; Input.walkEnabled = false;
+    }
     HUD.objective('Atrapá peces con la garra (0/3).<br>Mantené apretado para extenderla hacia donde tocás, <b>soltá para cerrarla</b>.');
     setTimeout(() => HUD.toast('Joystick: avanzar y girar · Mirá arriba para subir y abajo para bajar', 3600), 2800);
   }
   update(t, dt) {
     this.t = t;
     // --- navegación del submarino (joystick + inclinación de la mirada) ---
-    const mv = Input.moveVec();
+    const mv = this.cine > 0 ? new THREE.Vector2() : Input.moveVec();
     this.subYaw -= mv.x * dt * 0.9;
     const thrust = -mv.y * 4.2;
     const fwd = new THREE.Vector3(-Math.sin(this.subYaw), 0, -Math.cos(this.subYaw));
@@ -321,6 +328,11 @@ class OceanWorld extends BaseWorld {
     Look.baseYaw = this.subYaw; applyLook(dt);
     camera.position.copy(this.sub.localToWorld(this.eye.clone()));
     camera.quaternion.premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(this.sub.rotation.x, 0, this.sub.rotation.z)));
+    if (this.cine > 0) {   // cámara exterior girando alrededor del submarino
+      this.cine -= dt; const k = 1 - this.cine / 3.2; const a = this.subYaw + 0.9 - k * 1.6;
+      camera.position.copy(this.subPos).add(new THREE.Vector3(Math.sin(a) * (10 - k * 4), 2.2 - k * 1.6, Math.cos(a) * (10 - k * 4))); camera.lookAt(this.subPos.x, this.subPos.y - 0.6, this.subPos.z);
+      if (this.cine <= 0) { this.ext.visible = false; this.hidden.forEach((c) => (c.visible = true)); Input.walkEnabled = true; HUD.flash(true); setTimeout(() => HUD.flash(false), 200); }
+    }
     // --- entorno ---
     this.kelp.forEach((k) => { k.rotation.z = Math.sin(t * 0.8 + k.userData.ph) * 0.12; k.rotation.x = Math.cos(t * 0.6 + k.userData.ph) * 0.08; });
     this.rays.forEach((r) => { r.position.copy(this.subPos).add(r.userData.off); r.position.y = 4; r.lookAt(camera.position.x, 4, camera.position.z); });

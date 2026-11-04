@@ -46,12 +46,13 @@ class IntroWorld extends BaseWorld {
     const s = this.scene; this.boxes = [];
     s.background = new THREE.Color(0x07070c); s.fog = new THREE.Fog(0x07070c, 8, 16);
     s.add(new THREE.HemisphereLight(0xffe6c8, 0x2a2018, 0.55));
-    const W = 5, D = 6, H = 2.8, ZW = -3; // cuarto: x[-2.5,2.5] z[-3,3]
+    const W = 5, D = 6, H = 3.2, ZW = -3; const BED = Assets.has('bedroom'); // cuarto: x[-2.5,2.5] z[-3,3]
     // --- paredes, piso y techo ---
-    const plaster = canvasTex(256, 256, (g) => { g.fillStyle = '#b9a58a'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(90,70,50,${Math.random() * 0.08})`; g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2); } g.strokeStyle = 'rgba(255,255,255,.08)'; for (let x = 0; x < 256; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); } }, [2, 1]);
+    const plaster = canvasTex(256, 256, (g) => { g.fillStyle = '#c3c9d4'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(90,70,50,${Math.random() * 0.08})`; g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2); } g.strokeStyle = 'rgba(255,255,255,.08)'; for (let x = 0; x < 256; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); } }, [2, 1]);
     const wallMat = new THREE.MeshStandardMaterial({ map: plaster, roughness: 0.95 });
     const wall = (x, z, w, d) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, H, d), wallMat); m.position.set(x, H / 2, z); m.receiveShadow = true; s.add(m); this.boxes.push(box(x, z, w, d)); };
     wall(-W / 2 - 0.1, 0, 0.2, D); wall(W / 2 + 0.1, 0, 0.2, D); wall(0, D / 2 + 0.1, W, 0.2);
+    if (BED) s.children.slice(-2).forEach((m) => (m.visible = false));   // el modelo del cuarto ya trae esas dos paredes
     const wood = canvasTex(256, 256, (g) => { for (let i = 0; i < 8; i++) { g.fillStyle = `hsl(28,${35 + Math.random() * 10}%,${30 + Math.random() * 8}%)`; g.fillRect(0, i * 32, 256, 31); g.fillStyle = '#2a1a0e'; g.fillRect(0, i * 32 + 31, 256, 1); } }, [3, 4]);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D + 2), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.7 })); floor.rotation.x = -Math.PI / 2; floor.position.z = -1; floor.receiveShadow = true; s.add(floor);
     const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), M.std(0xd8cfc0)); ceil.rotation.x = Math.PI / 2; ceil.position.y = H; s.add(ceil);
@@ -82,32 +83,44 @@ class IntroWorld extends BaseWorld {
       const m = new THREE.Mesh(g, shardMat); this.crack.add(m); this.shards.push({ m, v: new THREE.Vector3(rand(0, 1.2), rand(1, 2.2), rand(-0.6, 0.6)), spin: rand(-3, 3) });
     }
     this.crack.children.forEach((o) => { if (o.isPoints || (o.material && o.material.blending === THREE.AdditiveBlending)) o.visible = false; });
-    // --- muebles del cuarto ---
+    // --- muebles del cuarto: modelo 3D 'Bedroom (Low Poly)' si cargó; si no, muebles procedurales ---
     const add = (geo, mat, x, y, z, ry = 0, collide) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; s.add(m); if (collide) this.boxes.push(box(x, z, collide[0], collide[1])); return m; };
-    add(new THREE.BoxGeometry(1.5, 0.4, 2.1), M.std(0x6a4a30), -1.7, 0.2, 1.6, 0, [1.5, 2.1]);
-    add(new THREE.BoxGeometry(1.42, 0.22, 2.0), M.std(0x2f4f8a, { roughness: 1 }), -1.7, 0.5, 1.65);
-    add(new THREE.BoxGeometry(0.9, 0.16, 0.45), M.std(0xeeeeee, { roughness: 1 }), -1.7, 0.67, 2.4);
-    add(new THREE.BoxGeometry(1.5, 0.9, 0.08), M.std(0x5a3e28), -1.7, 0.7, 2.68);
-    add(new THREE.BoxGeometry(1.3, 0.06, 0.6), M.std(0xd9c7a8), 1.85, 0.75, 0.3, Math.PI / 2, [0.6, 1.3]);
-    for (const [lx, lz] of [[1.6, -0.25], [2.1, -0.25], [1.6, 0.85], [2.1, 0.85]]) add(new THREE.BoxGeometry(0.05, 0.75, 0.05), M.std(0xd9c7a8), lx, 0.37, lz);
-    const laptop = add(new THREE.BoxGeometry(0.34, 0.02, 0.24), M.std(0x2a2d33, { metalness: 0.6 }), 1.85, 0.79, 0.3);
-    const screen = add(new THREE.PlaneGeometry(0.34, 0.22), new THREE.MeshBasicMaterial({ color: 0x3aa0ff }), 1.97, 0.9, 0.3, -Math.PI / 2); screen.rotation.z = 0.2;
-    this.lamp = new THREE.PointLight(0xffc27a, 4, 5, 1.6); this.lamp.position.set(1.9, 1.25, 0.8); this.lamp.castShadow = true; this.lamp.shadow.mapSize.set(512, 512); s.add(this.lamp);
-    add(new THREE.ConeGeometry(0.14, 0.18, 10, 1, true), M.std(0xf0e0b0, { side: THREE.DoubleSide, emissive: 0x6a5020 }), 1.9, 1.15, 0.8);
-    add(new THREE.CylinderGeometry(0.015, 0.015, 0.35, 6), M.std(0x333333), 1.9, 0.95, 0.8);
-    add(new THREE.BoxGeometry(0.5, 0.06, 0.5), M.std(0x333a44), 1.3, 0.47, 0.3, 0, [0.5, 0.5]); add(new THREE.BoxGeometry(0.5, 0.5, 0.06), M.std(0x333a44), 1.08, 0.75, 0.3, Math.PI / 2);
-    add(new THREE.BoxGeometry(0.6, 2.0, 1.2), M.std(0x8a6a4a), 2.15, 1.0, 2.2, 0, [0.6, 1.2]);
-    const shelf = add(new THREE.BoxGeometry(0.3, 1.6, 0.9), M.std(0x5a3e28), -2.3, 0.8, -1.4, 0, [0.35, 0.9]);
-    for (let r = 0; r < 4; r++) for (let b = 0; b < 5; b++) add(new THREE.BoxGeometry(0.18, rand(0.18, 0.28), 0.12), M.std([0xb03a2e, 0x2e6eb0, 0xe0b040, 0x3a8a4a][(r + b) % 4]), -2.25, 0.25 + r * 0.38, -1.75 + b * 0.15);
-    const rug = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24), M.std(0x8a3a4a, { roughness: 1 })); rug.rotation.x = -Math.PI / 2; rug.position.set(0, 0.005, 0.2); s.add(rug);
+    if (BED) {
+      const room = Assets.get('bedroom', { size: 4.91, dim: 'x', rotY: Math.PI });   // paredes del modelo: derecha y fondo
+      const hs = room.userData.size; room.position.set(W / 2 - hs.x / 2, 0, D / 2 - hs.z / 2); s.add(room); room.updateMatrixWorld(true);
+      // colisiones automáticas a partir de las cajas de cada mueble
+      room.traverse((m) => {
+        if (!m.isMesh) return; const b = new THREE.Box3().setFromObject(m); const z = b.getSize(new THREE.Vector3());
+        if (z.x > 4 || z.z > 4 || b.min.y > 1.0 || z.y < 0.12) return;   // cáscara del cuarto, estantes altos, alfombra
+        this.boxes.push({ x0: b.min.x - 0.05, x1: b.max.x + 0.05, z0: b.min.z - 0.05, z1: b.max.z + 0.05 });
+      });
+      this.lamp = new THREE.PointLight(0xffc27a, 3, 5, 1.6); this.lamp.position.set(1.4, 1.6, -1.6); s.add(this.lamp);
+    } else {
+          add(new THREE.BoxGeometry(1.5, 0.4, 2.1), M.std(0x6a4a30), -1.7, 0.2, 1.6, 0, [1.5, 2.1]);
+      add(new THREE.BoxGeometry(1.42, 0.22, 2.0), M.std(0x2f4f8a, { roughness: 1 }), -1.7, 0.5, 1.65);
+      add(new THREE.BoxGeometry(0.9, 0.16, 0.45), M.std(0xeeeeee, { roughness: 1 }), -1.7, 0.67, 2.4);
+      add(new THREE.BoxGeometry(1.5, 0.9, 0.08), M.std(0x5a3e28), -1.7, 0.7, 2.68);
+      add(new THREE.BoxGeometry(1.3, 0.06, 0.6), M.std(0xd9c7a8), 1.85, 0.75, 0.3, Math.PI / 2, [0.6, 1.3]);
+      for (const [lx, lz] of [[1.6, -0.25], [2.1, -0.25], [1.6, 0.85], [2.1, 0.85]]) add(new THREE.BoxGeometry(0.05, 0.75, 0.05), M.std(0xd9c7a8), lx, 0.37, lz);
+      const laptop = add(new THREE.BoxGeometry(0.34, 0.02, 0.24), M.std(0x2a2d33, { metalness: 0.6 }), 1.85, 0.79, 0.3);
+      const screen = add(new THREE.PlaneGeometry(0.34, 0.22), new THREE.MeshBasicMaterial({ color: 0x3aa0ff }), 1.97, 0.9, 0.3, -Math.PI / 2); screen.rotation.z = 0.2;
+      this.lamp = new THREE.PointLight(0xffc27a, 4, 5, 1.6); this.lamp.position.set(1.9, 1.25, 0.8); this.lamp.castShadow = true; this.lamp.shadow.mapSize.set(512, 512); s.add(this.lamp);
+      add(new THREE.ConeGeometry(0.14, 0.18, 10, 1, true), M.std(0xf0e0b0, { side: THREE.DoubleSide, emissive: 0x6a5020 }), 1.9, 1.15, 0.8);
+      add(new THREE.CylinderGeometry(0.015, 0.015, 0.35, 6), M.std(0x333333), 1.9, 0.95, 0.8);
+      add(new THREE.BoxGeometry(0.5, 0.06, 0.5), M.std(0x333a44), 1.3, 0.47, 0.3, 0, [0.5, 0.5]); add(new THREE.BoxGeometry(0.5, 0.5, 0.06), M.std(0x333a44), 1.08, 0.75, 0.3, Math.PI / 2);
+      add(new THREE.BoxGeometry(0.6, 2.0, 1.2), M.std(0x8a6a4a), 2.15, 1.0, 2.2, 0, [0.6, 1.2]);
+      const shelf = add(new THREE.BoxGeometry(0.3, 1.6, 0.9), M.std(0x5a3e28), -2.3, 0.8, -1.4, 0, [0.35, 0.9]);
+      for (let r = 0; r < 4; r++) for (let b = 0; b < 5; b++) add(new THREE.BoxGeometry(0.18, rand(0.18, 0.28), 0.12), M.std([0xb03a2e, 0x2e6eb0, 0xe0b040, 0x3a8a4a][(r + b) % 4]), -2.25, 0.25 + r * 0.38, -1.75 + b * 0.15);
+      const rug = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24), M.std(0x8a3a4a, { roughness: 1 })); rug.rotation.x = -Math.PI / 2; rug.position.set(0, 0.005, 0.2); s.add(rug);
+    }
     // ventana con la luna y pósters
     const win = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.0), new THREE.MeshBasicMaterial({ map: canvasTex(256, 232, (g) => { const gr = g.createLinearGradient(0, 0, 0, 232); gr.addColorStop(0, '#0a1430'); gr.addColorStop(1, '#22305a'); g.fillStyle = gr; g.fillRect(0, 0, 256, 232); g.fillStyle = '#f4ecd0'; g.beginPath(); g.arc(180, 60, 26, 0, TAU); g.fill(); for (let i = 0; i < 60; i++) { g.fillStyle = '#fff'; g.fillRect(Math.random() * 256, Math.random() * 140, 1.5, 1.5); } g.fillStyle = '#05070f'; for (let x = 0; x < 256; x += 22) g.fillRect(x, 170 - Math.random() * 50, 18, 232); g.fillStyle = '#4a3a2a'; g.fillRect(124, 0, 8, 232); g.fillRect(0, 112, 256, 8); }) }));
     win.position.set(-2.39, 1.55, -0.2); win.rotation.y = Math.PI / 2; s.add(win);
     const moon = new THREE.SpotLight(0x8fa8e0, 6, 6, 0.6, 0.8, 1.5); moon.position.set(-2.3, 2, -0.2); moon.target.position.set(0, 0, 0.2); s.add(moon, moon.target);
     const poster = (x, z, ry, col, txt) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.85), new THREE.MeshStandardMaterial({ map: canvasTex(150, 212, (g) => { g.fillStyle = col; g.fillRect(0, 0, 150, 212); g.fillStyle = 'rgba(255,255,255,.85)'; g.font = 'bold 22px Unbounded, sans-serif'; g.fillText(txt, 12, 190); g.beginPath(); g.arc(75, 80, 40, 0, TAU); g.fill(); }) })); m.position.set(x, 1.7, z); m.rotation.y = ry; s.add(m); };
-    poster(2.39, -1.4, -Math.PI / 2, '#3a2a6a', 'SPACE'); poster(-0.8, 2.99, Math.PI, '#a03a2a', 'ROCK'); poster(0.6, 2.99, Math.PI, '#2a6a5a', 'OCEAN');
-    const ceilLamp = new THREE.PointLight(0xffe2b8, 3, 7, 1.6); ceilLamp.position.set(0, 2.5, 0.5); s.add(ceilLamp); this.ceilLamp = ceilLamp;
-    add(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff0d0 }), 0, 2.62, 0.5);
+    if (!BED) { poster(2.39, -1.4, -Math.PI / 2, '#3a2a6a', 'SPACE'); poster(-0.8, 2.99, Math.PI, '#a03a2a', 'ROCK'); poster(0.6, 2.99, Math.PI, '#2a6a5a', 'OCEAN'); }
+    const ceilLamp = new THREE.PointLight(0xffe2b8, 3, 7, 1.6); ceilLamp.position.set(0, H - 0.3, 0.5); s.add(ceilLamp); this.ceilLamp = ceilLamp;
+    add(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff0d0 }), 0, H - 0.18, 0.5);
     // fragmentos fantasma flotando detrás de la grieta (el objetivo)
     this.ghosts = [0, 1, 2].map((i) => { const f = makeFragment(i, false); f.scale.setScalar(0.35); s.add(f); f.visible = false; return f; });
     Player.reset(0, 0.6, 0, this.boxes); Look.dragPitch = 0; camera.position.set(0, 1.6, 0.6);

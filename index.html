@@ -36,6 +36,7 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .ld-bar{width:180px; height:2px; background:#ffffff14; overflow:hidden; border-radius:2px}
   .ld-bar i{display:block; height:100%; width:30%; background:var(--blue); animation:ld 1.1s ease-in-out infinite}
+  .ld-bar.real i{animation:none; width:0; transition:width .25s}
   @keyframes ld{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
   .ld-txt{font:500 11px 'JetBrains Mono',monospace; letter-spacing:.3em; color:var(--muted)}
 
@@ -202,7 +203,7 @@
 <section id="ending"><h2 id="endTitle"></h2><p id="endText"></p><a id="again" href="#" onclick="location.reload();return false;">↻ JUGAR DE NUEVO</a></section>
 
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
 </script>
 <script type="module">
 import * as THREE from 'three';
@@ -314,7 +315,8 @@ function canvasTex(w, h, draw, repeat) {
 /** Libera geometrías, materiales y texturas de un objeto (al cambiar de mundo) */
 function disposeTree(obj) {
   obj.traverse((o) => {
-    if (o.geometry) o.geometry.dispose();
+    if (o.userData.shared) return;                       // geometría y materiales de modelos cacheados
+    if (o.geometry && !o.userData.sharedGeo) o.geometry.dispose();
     if (o.material) {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       mats.forEach((m) => { for (const k in m) { const v = m[k]; if (v && v.isTexture && !v.userData.keep) v.dispose(); } m.dispose(); });
@@ -622,6 +624,67 @@ const Player = {
 /** crea una caja de colisión a partir de centro y tamaño */
 const box = (x, z, w, d) => ({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 });
 /* =====================================================================
+   3b. MODELOS 3D EXTERNOS (glTF/GLB optimizados con meshopt + WebP)
+   Se precargan con barra de progreso real. Si alguno falla, el juego
+   usa la versión procedural de ese objeto (nunca se rompe).
+   Créditos y licencias: ver README.md
+   ===================================================================== */
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+const Assets = {
+  models: {},
+  list: {
+    bedroom: 'models/bedroom.glb',     // cuarto del protagonista
+    fish: 'models/fish.glb',           // pez low-poly
+    submarine: 'models/submarine.glb', // exterior del submarino
+    dino: 'models/dino.glb',           // esqueleto de alosaurio
+    gaunt: 'models/gaunt.glb',         // entidad de la casa (en versión fantasma)
+    crystal: 'models/crystal.glb',     // cristal de los fragmentos
+  },
+  /** carga todo en paralelo e informa el progreso (0..1) */
+  async load(onProgress) {
+    const L = new GLTFLoader(); L.setMeshoptDecoder(MeshoptDecoder);
+    const keys = Object.keys(this.list); let done = 0;
+    await Promise.all(keys.map((k) => L.loadAsync(this.list[k])
+      .then((g) => { this.models[k] = this.prep(g.scene); })
+      .catch((e) => console.warn('No se pudo cargar el modelo', k, e))
+      .finally(() => { done++; onProgress && onProgress(done / keys.length); })));
+  },
+  /** sombras + marca de recurso compartido (disposeTree no lo libera) */
+  prep(o) {
+    o.traverse((m) => {
+      if (!m.isMesh) return; m.castShadow = true; m.receiveShadow = true; m.userData.shared = true;
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      mats.forEach((mt) => { for (const key in mt) { const v = mt[key]; if (v && v.isTexture) v.userData.keep = true; } });   // texturas compartidas entre copias
+    });
+    return o;
+  },
+  has(k) { return !!this.models[k]; },
+  /**
+   * Devuelve una copia normalizada: centrada en x/z, apoyada en y=0,
+   * orientada (rotY o eje→+Z) y escalada para que `dim` mida `size`.
+   */
+  get(k, { size = 1, dim = 'y', rotY = 0, axis = null, center = true } = {}) {
+    const src = this.models[k]; if (!src) return null;
+    const inner = src.clone(true);
+    if (axis) inner.quaternion.setFromUnitVectors(axis.clone().normalize(), new THREE.Vector3(0, 0, 1));
+    else inner.rotation.y = rotY;
+    const wrap = new THREE.Group(); wrap.add(inner); wrap.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(inner); const sz = b.getSize(new THREE.Vector3()); const c = b.getCenter(new THREE.Vector3());
+    const s = size / (sz[dim] || 1);
+    inner.scale.setScalar(s); inner.position.set(center ? -c.x * s : 0, -b.min.y * s, center ? -c.z * s : 0);
+    if (axis) inner.position.y = -c.y * s; // los peces quedan centrados también en altura
+    wrap.userData.size = sz.multiplyScalar(s);
+    return wrap;
+  },
+  /** clona los materiales de una copia para poder teñirlos sin afectar a las demás */
+  ownMaterials(obj, fn) {
+    obj.traverse((m) => { if (m.isMesh) { m.material = m.material.clone(); m.userData.shared = false; m.userData.sharedGeo = true; fn && fn(m.material, m); } });
+    return obj;
+  },
+};
+/* =====================================================================
    4. ENTIDADES COMPARTIDAS: fragmentos azules, portales, grieta 3D, peces
    ===================================================================== */
 const FRAG_BLUE = 0x2f8bff, FRAG_EMISSIVE = 0x0b55ff;   // ÚNICO color de todos los fragmentos
@@ -658,6 +721,15 @@ function makeFragment(variant = 0, withLight = true) {
   halo.scale.setScalar(1.6);
   grp.add(shard, core, chip, halo);
   if (withLight) { const l = new THREE.PointLight(0x3aa0ff, 2.2, 6, 1.6); grp.add(l); grp.userData.light = l; }
+  // modelo de cristal (si cargó): reemplaza la geometría procedural, teñido del AZUL de los fragmentos
+  if (Assets.has('crystal')) {
+    const tint = (m) => { m.color = new THREE.Color(FRAG_BLUE).lerp(new THREE.Color(0xffffff), 0.35); m.emissive = new THREE.Color(0x0b55ff); m.emissiveIntensity = 0.55; m.roughness = 0.2; m.metalness = 0.1; };
+    const c1 = Assets.ownMaterials(Assets.get('crystal', { size: 0.95 }), tint); c1.position.y = -0.47;
+    const c2 = Assets.ownMaterials(Assets.get('crystal', { size: 0.34 }), tint); c2.position.y = -0.17;
+    shard.geometry.dispose(); shard.geometry = new THREE.BufferGeometry(); shard.add(c1);   // el grupo 'shard' sigue girando
+    chip.geometry.dispose(); chip.geometry = new THREE.BufferGeometry(); chip.add(c2);
+    core.visible = false;
+  }
   grp.userData.shard = shard;
   grp.userData.update = (t) => { shard.rotation.y = t * 0.9; core.rotation.y = -t * 1.3; chip.rotation.y = t * 1.6; grp.position.y = (grp.userData.baseY ?? grp.position.y) + Math.sin(t * 2) * 0.06; halo.material.opacity = 0.65 + Math.sin(t * 3) * 0.2; };
   return grp;
@@ -782,7 +854,7 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
   geo.rotateX(Math.PI / 2); // la extrusión va hacia abajo (Y negativo)
   // sombreado por profundidad: oscuro arriba en las paredes, teñido de azul cerca del fondo
   const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
-  const rock = new THREE.Color(rect ? 0xb9a58a : 0x5d6372), deep = new THREE.Color(0x05070d), lit = new THREE.Color(0x1d5bd8);
+  const rock = new THREE.Color(rect ? 0xc3c9d4 : 0x5d6372), deep = new THREE.Color(0x05070d), lit = new THREE.Color(0x1d5bd8);
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i); const k = clamp(-y / depth, 0, 1);
     const c = y > -0.05 ? rock.clone().multiplyScalar(0.85 + Math.random() * 0.25) : deep.clone().lerp(lit, Math.pow(k, 2.2));
@@ -801,7 +873,7 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
   }
   const light = new THREE.PointLight(0x3aa0ff, 14, 9, 1.3); light.position.set(0, -depth * 0.6, 0); grp.add(light);
   // placas fracturadas levantadas e inclinadas sobre el borde (superficie quebrada)
-  const lipMat = new THREE.MeshStandardMaterial({ color: rect ? 0xa8957b : 0x5d6372, flatShading: true, roughness: 0.95 });
+  const lipMat = new THREE.MeshStandardMaterial({ color: rect ? 0xaeb5c2 : 0x5d6372, flatShading: true, roughness: 0.95 });
   for (let i = 1; i < main.length - 1; i += 1) {
     const a = main[i], b = main[(i + 1) % main.length]; if (a.distanceTo(b) > 1.2) continue;
     const mid = a.clone().add(b).multiplyScalar(0.5); const along = b.clone().sub(a); const len2 = along.length();
@@ -813,7 +885,7 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
     plate.rotateX(-(0.12 + Math.random() * 0.28) * Math.sign(nrm.y || 1) * (Math.random() < 0.5 ? 1 : 0.4));
     plate.rotateZ(rand(-0.08, 0.08)); plate.castShadow = true; plate.receiveShadow = true; grp.add(plate);
   }
-  const debrisMat = M.std(rect ? 0x8a7a64 : 0x4a4f5c, { roughness: 1 });
+  const debrisMat = M.std(rect ? 0x9aa1ad : 0x4a4f5c, { roughness: 1 });
   for (let i = 0; i < (rect ? 0 : 30); i++) {   // en una pared no hay escombros 'apoyados' sobre la cara
     const v = main[Math.floor(Math.random() * main.length)];
     const d = new THREE.Mesh(jitter(new THREE.DodecahedronGeometry(rand(0.06, 0.22), 0), 0.03), debrisMat);
@@ -850,6 +922,7 @@ function pointInPoly(x, y, poly) {
 }
 
 /* ---------- PEZ 3D LOW-POLY (estilo de la referencia) ---------- */
+const FISH_AXIS = new THREE.Vector3(0.668, 0.279, 0.689);   // eje cabeza-cola del modelo de pez (calculado por PCA)
 const SPECIES = [
   { id: 'dorado', name: 'Pez Dorado', body: 0xff6a1f, stripe: 0xfff4ea, fin: 0xf2e6dc, stripes: 3, size: 0.42 },
   { id: 'payaso', name: 'Pez Payaso', body: 0xff8a00, stripe: 0xffffff, fin: 0x222222, stripes: 2, size: 0.34 },
@@ -896,8 +969,17 @@ function makeFish(sp, shiny = false) {
   if (shiny) { const f = makeFragment(4, false); f.scale.setScalar(0.55); f.position.set(0, 0, 0); grp.add(f); grp.userData.innerFrag = f; const l = new THREE.PointLight(0xfff0c0, 2.5, 5); grp.add(l); }
   grp.scale.setScalar(sp.size);
   grp.userData.tail = tailPivot; grp.userData.pecs = [pecL, pecR]; grp.userData.phase = rand(0, TAU);
+  // modelo de pez (si cargó): reemplaza el cuerpo procedural; el dorado conserva su textura, el resto se tiñe plano (low-poly)
+  let model = null;
+  if (Assets.has('fish')) {
+    model = Assets.get('fish', { axis: FISH_AXIS, size: 2.3, dim: 'z' });
+    if (shiny || sp.id !== 'dorado') Assets.ownMaterials(model, (m) => { m.map = null; m.color = new THREE.Color(shiny ? 0xfff2c0 : sp.body); m.flatShading = true; m.roughness = 0.5; if (shiny) { m.emissive = new THREE.Color(0xffe9a8); m.emissiveIntensity = 0.6; m.transparent = true; m.opacity = 0.85; } });
+    grp.children.forEach((c) => { if (c !== grp.userData.innerFrag && !c.isLight) c.visible = false; });
+    model.position.z = -0.3; grp.add(model);
+  }
   grp.userData.animate = (t, speed = 1) => {
     const ph = grp.userData.phase;
+    if (model) model.rotation.y = Math.sin(t * 7 * speed + ph) * 0.22;   // nado: ondulación del cuerpo
     tailPivot.rotation.y = Math.sin(t * 9 * speed + ph) * 0.55;
     body.rotation.y = Math.sin(t * 9 * speed + ph + 1.2) * 0.07;
     pecL.rotation.z = 0.3 + Math.sin(t * 6 + ph) * 0.3; pecR.rotation.z = -0.3 - Math.sin(t * 6 + ph) * 0.3;
@@ -952,12 +1034,13 @@ class IntroWorld extends BaseWorld {
     const s = this.scene; this.boxes = [];
     s.background = new THREE.Color(0x07070c); s.fog = new THREE.Fog(0x07070c, 8, 16);
     s.add(new THREE.HemisphereLight(0xffe6c8, 0x2a2018, 0.55));
-    const W = 5, D = 6, H = 2.8, ZW = -3; // cuarto: x[-2.5,2.5] z[-3,3]
+    const W = 5, D = 6, H = 3.2, ZW = -3; const BED = Assets.has('bedroom'); // cuarto: x[-2.5,2.5] z[-3,3]
     // --- paredes, piso y techo ---
-    const plaster = canvasTex(256, 256, (g) => { g.fillStyle = '#b9a58a'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(90,70,50,${Math.random() * 0.08})`; g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2); } g.strokeStyle = 'rgba(255,255,255,.08)'; for (let x = 0; x < 256; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); } }, [2, 1]);
+    const plaster = canvasTex(256, 256, (g) => { g.fillStyle = '#c3c9d4'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(90,70,50,${Math.random() * 0.08})`; g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2); } g.strokeStyle = 'rgba(255,255,255,.08)'; for (let x = 0; x < 256; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); } }, [2, 1]);
     const wallMat = new THREE.MeshStandardMaterial({ map: plaster, roughness: 0.95 });
     const wall = (x, z, w, d) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, H, d), wallMat); m.position.set(x, H / 2, z); m.receiveShadow = true; s.add(m); this.boxes.push(box(x, z, w, d)); };
     wall(-W / 2 - 0.1, 0, 0.2, D); wall(W / 2 + 0.1, 0, 0.2, D); wall(0, D / 2 + 0.1, W, 0.2);
+    if (BED) s.children.slice(-2).forEach((m) => (m.visible = false));   // el modelo del cuarto ya trae esas dos paredes
     const wood = canvasTex(256, 256, (g) => { for (let i = 0; i < 8; i++) { g.fillStyle = `hsl(28,${35 + Math.random() * 10}%,${30 + Math.random() * 8}%)`; g.fillRect(0, i * 32, 256, 31); g.fillStyle = '#2a1a0e'; g.fillRect(0, i * 32 + 31, 256, 1); } }, [3, 4]);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D + 2), new THREE.MeshStandardMaterial({ map: wood, roughness: 0.7 })); floor.rotation.x = -Math.PI / 2; floor.position.z = -1; floor.receiveShadow = true; s.add(floor);
     const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), M.std(0xd8cfc0)); ceil.rotation.x = Math.PI / 2; ceil.position.y = H; s.add(ceil);
@@ -988,32 +1071,44 @@ class IntroWorld extends BaseWorld {
       const m = new THREE.Mesh(g, shardMat); this.crack.add(m); this.shards.push({ m, v: new THREE.Vector3(rand(0, 1.2), rand(1, 2.2), rand(-0.6, 0.6)), spin: rand(-3, 3) });
     }
     this.crack.children.forEach((o) => { if (o.isPoints || (o.material && o.material.blending === THREE.AdditiveBlending)) o.visible = false; });
-    // --- muebles del cuarto ---
+    // --- muebles del cuarto: modelo 3D 'Bedroom (Low Poly)' si cargó; si no, muebles procedurales ---
     const add = (geo, mat, x, y, z, ry = 0, collide) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; s.add(m); if (collide) this.boxes.push(box(x, z, collide[0], collide[1])); return m; };
-    add(new THREE.BoxGeometry(1.5, 0.4, 2.1), M.std(0x6a4a30), -1.7, 0.2, 1.6, 0, [1.5, 2.1]);
-    add(new THREE.BoxGeometry(1.42, 0.22, 2.0), M.std(0x2f4f8a, { roughness: 1 }), -1.7, 0.5, 1.65);
-    add(new THREE.BoxGeometry(0.9, 0.16, 0.45), M.std(0xeeeeee, { roughness: 1 }), -1.7, 0.67, 2.4);
-    add(new THREE.BoxGeometry(1.5, 0.9, 0.08), M.std(0x5a3e28), -1.7, 0.7, 2.68);
-    add(new THREE.BoxGeometry(1.3, 0.06, 0.6), M.std(0xd9c7a8), 1.85, 0.75, 0.3, Math.PI / 2, [0.6, 1.3]);
-    for (const [lx, lz] of [[1.6, -0.25], [2.1, -0.25], [1.6, 0.85], [2.1, 0.85]]) add(new THREE.BoxGeometry(0.05, 0.75, 0.05), M.std(0xd9c7a8), lx, 0.37, lz);
-    const laptop = add(new THREE.BoxGeometry(0.34, 0.02, 0.24), M.std(0x2a2d33, { metalness: 0.6 }), 1.85, 0.79, 0.3);
-    const screen = add(new THREE.PlaneGeometry(0.34, 0.22), new THREE.MeshBasicMaterial({ color: 0x3aa0ff }), 1.97, 0.9, 0.3, -Math.PI / 2); screen.rotation.z = 0.2;
-    this.lamp = new THREE.PointLight(0xffc27a, 4, 5, 1.6); this.lamp.position.set(1.9, 1.25, 0.8); this.lamp.castShadow = true; this.lamp.shadow.mapSize.set(512, 512); s.add(this.lamp);
-    add(new THREE.ConeGeometry(0.14, 0.18, 10, 1, true), M.std(0xf0e0b0, { side: THREE.DoubleSide, emissive: 0x6a5020 }), 1.9, 1.15, 0.8);
-    add(new THREE.CylinderGeometry(0.015, 0.015, 0.35, 6), M.std(0x333333), 1.9, 0.95, 0.8);
-    add(new THREE.BoxGeometry(0.5, 0.06, 0.5), M.std(0x333a44), 1.3, 0.47, 0.3, 0, [0.5, 0.5]); add(new THREE.BoxGeometry(0.5, 0.5, 0.06), M.std(0x333a44), 1.08, 0.75, 0.3, Math.PI / 2);
-    add(new THREE.BoxGeometry(0.6, 2.0, 1.2), M.std(0x8a6a4a), 2.15, 1.0, 2.2, 0, [0.6, 1.2]);
-    const shelf = add(new THREE.BoxGeometry(0.3, 1.6, 0.9), M.std(0x5a3e28), -2.3, 0.8, -1.4, 0, [0.35, 0.9]);
-    for (let r = 0; r < 4; r++) for (let b = 0; b < 5; b++) add(new THREE.BoxGeometry(0.18, rand(0.18, 0.28), 0.12), M.std([0xb03a2e, 0x2e6eb0, 0xe0b040, 0x3a8a4a][(r + b) % 4]), -2.25, 0.25 + r * 0.38, -1.75 + b * 0.15);
-    const rug = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24), M.std(0x8a3a4a, { roughness: 1 })); rug.rotation.x = -Math.PI / 2; rug.position.set(0, 0.005, 0.2); s.add(rug);
+    if (BED) {
+      const room = Assets.get('bedroom', { size: 4.91, dim: 'x', rotY: Math.PI });   // paredes del modelo: derecha y fondo
+      const hs = room.userData.size; room.position.set(W / 2 - hs.x / 2, 0, D / 2 - hs.z / 2); s.add(room); room.updateMatrixWorld(true);
+      // colisiones automáticas a partir de las cajas de cada mueble
+      room.traverse((m) => {
+        if (!m.isMesh) return; const b = new THREE.Box3().setFromObject(m); const z = b.getSize(new THREE.Vector3());
+        if (z.x > 4 || z.z > 4 || b.min.y > 1.0 || z.y < 0.12) return;   // cáscara del cuarto, estantes altos, alfombra
+        this.boxes.push({ x0: b.min.x - 0.05, x1: b.max.x + 0.05, z0: b.min.z - 0.05, z1: b.max.z + 0.05 });
+      });
+      this.lamp = new THREE.PointLight(0xffc27a, 3, 5, 1.6); this.lamp.position.set(1.4, 1.6, -1.6); s.add(this.lamp);
+    } else {
+          add(new THREE.BoxGeometry(1.5, 0.4, 2.1), M.std(0x6a4a30), -1.7, 0.2, 1.6, 0, [1.5, 2.1]);
+      add(new THREE.BoxGeometry(1.42, 0.22, 2.0), M.std(0x2f4f8a, { roughness: 1 }), -1.7, 0.5, 1.65);
+      add(new THREE.BoxGeometry(0.9, 0.16, 0.45), M.std(0xeeeeee, { roughness: 1 }), -1.7, 0.67, 2.4);
+      add(new THREE.BoxGeometry(1.5, 0.9, 0.08), M.std(0x5a3e28), -1.7, 0.7, 2.68);
+      add(new THREE.BoxGeometry(1.3, 0.06, 0.6), M.std(0xd9c7a8), 1.85, 0.75, 0.3, Math.PI / 2, [0.6, 1.3]);
+      for (const [lx, lz] of [[1.6, -0.25], [2.1, -0.25], [1.6, 0.85], [2.1, 0.85]]) add(new THREE.BoxGeometry(0.05, 0.75, 0.05), M.std(0xd9c7a8), lx, 0.37, lz);
+      const laptop = add(new THREE.BoxGeometry(0.34, 0.02, 0.24), M.std(0x2a2d33, { metalness: 0.6 }), 1.85, 0.79, 0.3);
+      const screen = add(new THREE.PlaneGeometry(0.34, 0.22), new THREE.MeshBasicMaterial({ color: 0x3aa0ff }), 1.97, 0.9, 0.3, -Math.PI / 2); screen.rotation.z = 0.2;
+      this.lamp = new THREE.PointLight(0xffc27a, 4, 5, 1.6); this.lamp.position.set(1.9, 1.25, 0.8); this.lamp.castShadow = true; this.lamp.shadow.mapSize.set(512, 512); s.add(this.lamp);
+      add(new THREE.ConeGeometry(0.14, 0.18, 10, 1, true), M.std(0xf0e0b0, { side: THREE.DoubleSide, emissive: 0x6a5020 }), 1.9, 1.15, 0.8);
+      add(new THREE.CylinderGeometry(0.015, 0.015, 0.35, 6), M.std(0x333333), 1.9, 0.95, 0.8);
+      add(new THREE.BoxGeometry(0.5, 0.06, 0.5), M.std(0x333a44), 1.3, 0.47, 0.3, 0, [0.5, 0.5]); add(new THREE.BoxGeometry(0.5, 0.5, 0.06), M.std(0x333a44), 1.08, 0.75, 0.3, Math.PI / 2);
+      add(new THREE.BoxGeometry(0.6, 2.0, 1.2), M.std(0x8a6a4a), 2.15, 1.0, 2.2, 0, [0.6, 1.2]);
+      const shelf = add(new THREE.BoxGeometry(0.3, 1.6, 0.9), M.std(0x5a3e28), -2.3, 0.8, -1.4, 0, [0.35, 0.9]);
+      for (let r = 0; r < 4; r++) for (let b = 0; b < 5; b++) add(new THREE.BoxGeometry(0.18, rand(0.18, 0.28), 0.12), M.std([0xb03a2e, 0x2e6eb0, 0xe0b040, 0x3a8a4a][(r + b) % 4]), -2.25, 0.25 + r * 0.38, -1.75 + b * 0.15);
+      const rug = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24), M.std(0x8a3a4a, { roughness: 1 })); rug.rotation.x = -Math.PI / 2; rug.position.set(0, 0.005, 0.2); s.add(rug);
+    }
     // ventana con la luna y pósters
     const win = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.0), new THREE.MeshBasicMaterial({ map: canvasTex(256, 232, (g) => { const gr = g.createLinearGradient(0, 0, 0, 232); gr.addColorStop(0, '#0a1430'); gr.addColorStop(1, '#22305a'); g.fillStyle = gr; g.fillRect(0, 0, 256, 232); g.fillStyle = '#f4ecd0'; g.beginPath(); g.arc(180, 60, 26, 0, TAU); g.fill(); for (let i = 0; i < 60; i++) { g.fillStyle = '#fff'; g.fillRect(Math.random() * 256, Math.random() * 140, 1.5, 1.5); } g.fillStyle = '#05070f'; for (let x = 0; x < 256; x += 22) g.fillRect(x, 170 - Math.random() * 50, 18, 232); g.fillStyle = '#4a3a2a'; g.fillRect(124, 0, 8, 232); g.fillRect(0, 112, 256, 8); }) }));
     win.position.set(-2.39, 1.55, -0.2); win.rotation.y = Math.PI / 2; s.add(win);
     const moon = new THREE.SpotLight(0x8fa8e0, 6, 6, 0.6, 0.8, 1.5); moon.position.set(-2.3, 2, -0.2); moon.target.position.set(0, 0, 0.2); s.add(moon, moon.target);
     const poster = (x, z, ry, col, txt) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.85), new THREE.MeshStandardMaterial({ map: canvasTex(150, 212, (g) => { g.fillStyle = col; g.fillRect(0, 0, 150, 212); g.fillStyle = 'rgba(255,255,255,.85)'; g.font = 'bold 22px Unbounded, sans-serif'; g.fillText(txt, 12, 190); g.beginPath(); g.arc(75, 80, 40, 0, TAU); g.fill(); }) })); m.position.set(x, 1.7, z); m.rotation.y = ry; s.add(m); };
-    poster(2.39, -1.4, -Math.PI / 2, '#3a2a6a', 'SPACE'); poster(-0.8, 2.99, Math.PI, '#a03a2a', 'ROCK'); poster(0.6, 2.99, Math.PI, '#2a6a5a', 'OCEAN');
-    const ceilLamp = new THREE.PointLight(0xffe2b8, 3, 7, 1.6); ceilLamp.position.set(0, 2.5, 0.5); s.add(ceilLamp); this.ceilLamp = ceilLamp;
-    add(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff0d0 }), 0, 2.62, 0.5);
+    if (!BED) { poster(2.39, -1.4, -Math.PI / 2, '#3a2a6a', 'SPACE'); poster(-0.8, 2.99, Math.PI, '#a03a2a', 'ROCK'); poster(0.6, 2.99, Math.PI, '#2a6a5a', 'OCEAN'); }
+    const ceilLamp = new THREE.PointLight(0xffe2b8, 3, 7, 1.6); ceilLamp.position.set(0, H - 0.3, 0.5); s.add(ceilLamp); this.ceilLamp = ceilLamp;
+    add(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff0d0 }), 0, H - 0.18, 0.5);
     // fragmentos fantasma flotando detrás de la grieta (el objetivo)
     this.ghosts = [0, 1, 2].map((i) => { const f = makeFragment(i, false); f.scale.setScalar(0.35); s.add(f); f.visible = false; return f; });
     Player.reset(0, 0.6, 0, this.boxes); Look.dragPitch = 0; camera.position.set(0, 1.6, 0.6);
@@ -1228,6 +1323,7 @@ class OceanWorld extends BaseWorld {
     this.claw.aim.copy(local.applyQuaternion(this.sub.quaternion));
   }
   onPointerDown(ndc) {
+    if (this.cine > 0) return true;
     if (this.phase === 'breath') { this.breath.holding = true; return true; }
     if (this.phase === 'fragment') { const h = pick(ndc, [this.frag]); if (h) { this.takeFragment(); return true; } }
     if (this.claw.state !== 'idle') return true;
@@ -1356,13 +1452,19 @@ class OceanWorld extends BaseWorld {
 
   enter() {
     HUD.setWorld('Mundo 1', 'Océano'); Audio.ambient('ocean'); Input.walkEnabled = true;
+    // toma exterior de 3 s: se ve el submarino (modelo 3D) sumergiéndose antes de pasar a la cabina
+    if (Assets.has('submarine')) {
+      this.ext = Assets.get('submarine', { size: 4.6, dim: 'z', rotY: Math.PI }); this.ext.position.set(0, -1.15, 0.4); this.sub.add(this.ext);
+      this.hidden = this.sub.children.filter((c) => c !== this.ext && (c.isMesh || c.isGroup) && c.visible); this.hidden.forEach((c) => (c.visible = false));
+      this.cine = 3.2; Input.walkEnabled = false;
+    }
     HUD.objective('Atrapá peces con la garra (0/3).<br>Mantené apretado para extenderla hacia donde tocás, <b>soltá para cerrarla</b>.');
     setTimeout(() => HUD.toast('Joystick: avanzar y girar · Mirá arriba para subir y abajo para bajar', 3600), 2800);
   }
   update(t, dt) {
     this.t = t;
     // --- navegación del submarino (joystick + inclinación de la mirada) ---
-    const mv = Input.moveVec();
+    const mv = this.cine > 0 ? new THREE.Vector2() : Input.moveVec();
     this.subYaw -= mv.x * dt * 0.9;
     const thrust = -mv.y * 4.2;
     const fwd = new THREE.Vector3(-Math.sin(this.subYaw), 0, -Math.cos(this.subYaw));
@@ -1379,6 +1481,11 @@ class OceanWorld extends BaseWorld {
     Look.baseYaw = this.subYaw; applyLook(dt);
     camera.position.copy(this.sub.localToWorld(this.eye.clone()));
     camera.quaternion.premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(this.sub.rotation.x, 0, this.sub.rotation.z)));
+    if (this.cine > 0) {   // cámara exterior girando alrededor del submarino
+      this.cine -= dt; const k = 1 - this.cine / 3.2; const a = this.subYaw + 0.9 - k * 1.6;
+      camera.position.copy(this.subPos).add(new THREE.Vector3(Math.sin(a) * (10 - k * 4), 2.2 - k * 1.6, Math.cos(a) * (10 - k * 4))); camera.lookAt(this.subPos.x, this.subPos.y - 0.6, this.subPos.z);
+      if (this.cine <= 0) { this.ext.visible = false; this.hidden.forEach((c) => (c.visible = true)); Input.walkEnabled = true; HUD.flash(true); setTimeout(() => HUD.flash(false), 200); }
+    }
     // --- entorno ---
     this.kelp.forEach((k) => { k.rotation.z = Math.sin(t * 0.8 + k.userData.ph) * 0.12; k.rotation.x = Math.cos(t * 0.6 + k.userData.ph) * 0.08; });
     this.rays.forEach((r) => { r.position.copy(this.subPos).add(r.userData.off); r.position.y = 4; r.lookAt(camera.position.x, 4, camera.position.z); });
@@ -1516,8 +1623,14 @@ class MuseumWorld extends BaseWorld {
     for (let i = 0; i < 8; i++) { const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.1, 4), M.std(0xfffaf0)); tooth.rotation.x = Math.PI; tooth.position.set(i % 2 ? 0.19 : -0.19, -0.18, -0.15 - Math.floor(i / 2) * 0.18); this.dinoHead.add(tooth); }
     for (const sx of [-0.2, 0.2]) { const sock = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), M.basic(0x050302)); sock.position.set(sx, 0.15, -0.3); this.dinoHead.add(sock); const glint = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 4), M.basic(0xff3010)); glint.position.set(sx * 1.08, 0.15, -0.33); this.dinoHead.add(glint); }
     d.rotation.y = 0; this.dinoBox = box(0, -3.5, 1.4, 3.8); this.boxes.push(this.dinoBox);
+    // esqueleto real de alosaurio (modelo 3D) en lugar del procedural, si cargó
+    if (Assets.has('dino')) {
+      d.traverse((o) => { if (o.isMesh) o.visible = false; });
+      const sk = Assets.get('dino', { size: 6.2, dim: 'z', rotY: Math.PI }); sk.position.set(0, -0.25, -0.3); d.add(sk);
+      sk.traverse((o) => { if (o.isMesh) o.material.envMapIntensity = 1; });
+    }
     const spot = new THREE.SpotLight(0xfff0d0, 40, 12, 0.5, 0.5, 1.4); spot.position.set(0, 4.8, -1.5); spot.target = d; spot.castShadow = true; spot.shadow.mapSize.set(512, 512); s.add(spot);
-    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.3), new THREE.MeshStandardMaterial({ map: canvasTex(256, 86, (g) => { g.fillStyle = '#c9a24a'; g.fillRect(0, 0, 256, 86); g.fillStyle = '#1a1208'; g.font = 'bold 22px Manrope'; g.fillText('TYRANNOSAURUS', 30, 40); g.font = '15px Manrope'; g.fillText('No lo pierdas de vista.', 40, 66); }) }));
+    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.3), new THREE.MeshStandardMaterial({ map: canvasTex(256, 86, (g) => { g.fillStyle = '#c9a24a'; g.fillRect(0, 0, 256, 86); g.fillStyle = '#1a1208'; g.font = 'bold 22px Manrope'; g.fillText('ALLOSAURUS', 30, 40); g.font = '15px Manrope'; g.fillText('No lo pierdas de vista.', 40, 66); }) }));
     plaque.position.set(0, 0.2, -0.78); plaque.rotation.x = -0.3; s.add(plaque);
     this.dinoT = 0; this.dinoScare = 0;
   }
@@ -1877,6 +1990,18 @@ class HouseWorld extends BaseWorld {
     const mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.13), new THREE.MeshBasicMaterial({ color: 0x000000 })); mouth.position.set(0, -0.06, 0.15); this.eHead.add(mouth);
     const pale = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.26), new THREE.MeshStandardMaterial({ color: 0x8a8580, roughness: 1, transparent: true, opacity: 0.35 })); pale.position.set(0, 0.02, 0.148); this.eHead.add(pale);
     e.traverse((o) => (o.castShadow = true)); this.scene.add(e);
+    // modelo 'Gaunt Horror Creature' convertido en fantasma: translúcido, pálido y con brillo frío
+    if (Assets.has('gaunt')) {
+      e.traverse((o) => { if (o.isMesh) o.visible = false; });
+      const g = Assets.get('gaunt', { size: 2.35 }); this.ghostMats = [];
+      g.traverse((m) => {
+        if (!m.isMesh) return; const src = m.material;
+        m.material = new THREE.MeshStandardMaterial({ map: src.map, normalMap: src.normalMap, color: 0xcfe0ff, emissive: 0x5b8cff, emissiveIntensity: 0.45, roughness: 0.6, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
+        m.userData.shared = false; m.userData.sharedGeo = true; m.castShadow = false; this.ghostMats.push(m.material);
+      });
+      this.ghost = g; e.add(g);
+      this.ghostLight = new THREE.PointLight(0x7fa8ff, 0.8, 3.5, 1.6); this.ghostLight.position.y = 1.6; e.add(this.ghostLight);
+    }
     // grafo de puntos de recorrido (el ente deambula por toda la casa)
     const N = this.nodes = { F: [0, 0.5], F1: [-2.5, 2], F2: [2.4, 2.2], C1: [0, -5.2], C2: [0, -7.2], L1d: [-2.2, -7.2], L1: [-4.6, -7.2], R1d: [2.2, -7.2], R1: [2.6, -8.8], C3: [0, -10], C4: [0, -13], L2d: [-2.2, -13], L2: [-4.6, -12.8], C5: [0, -15.2], E: [0, -18.8], E2: [2.4, -20.8] };
     this.edges = { F: ['F1', 'F2', 'C1'], F1: ['F'], F2: ['F'], C1: ['F', 'C2'], C2: ['C1', 'L1d', 'R1d', 'C3'], L1d: ['C2', 'L1'], L1: ['L1d'], R1d: ['C2', 'R1'], R1: ['R1d'], C3: ['C2', 'C4'], C4: ['C3', 'L2d', 'C5'], L2d: ['C4', 'L2'], L2: ['L2d'], C5: ['C4', 'E'], E: ['C5', 'E2'], E2: ['E'] };
@@ -1925,6 +2050,12 @@ class HouseWorld extends BaseWorld {
     this.eArms.forEach((a, i) => (a.rotation.x = Math.sin(t * (en.hunt ? 6 : 1.6) + i * Math.PI) * (en.hunt ? 0.5 : 0.18)));
     this.eHead.rotation.z = Math.sin(t * 0.7) * 0.25 + (Math.random() < 0.02 ? rand(-0.6, 0.6) : 0);
     this.eHead.rotation.y = Math.sin(t * 0.4) * 0.6;
+    if (this.ghost) {   // fantasma: flota, respira y parpadea (más cuando te está cazando)
+      this.ghost.position.y = 0.14 + Math.sin(t * 1.6) * 0.07; this.ghost.rotation.z = Math.sin(t * 0.9) * 0.04;
+      const flick = Math.random() < (en.hunt ? 0.08 : 0.02) ? 0.12 : 1;
+      const op = (0.42 + Math.sin(t * 3.1) * 0.08) * flick; this.ghostMats.forEach((m) => (m.opacity = op));
+      this.ghostLight.intensity = (en.hunt ? 1.6 : 0.8) * flick;
+    }
     const dist = Math.hypot(e.position.x - Player.pos.x, e.position.z - Player.pos.z);
     State.dangerLevel = clamp(1 - dist / 8, 0, 1);
     if (dist < 6) { this.beatT -= dt; if (this.beatT <= 0) { this.beatT = 0.45 + dist * 0.15; Audio.sfx.heartbeat(0.15 + (1 - dist / 6) * 0.45); if (dist < 3) haptic(25); } }
@@ -2227,8 +2358,13 @@ function loop() {
   if (Game.world) { Game.world.update(t, dt); renderer.render(Game.world.scene, camera); }
 }
 loop();
-setTimeout(() => $('loader').classList.add('hide'), 350);
-window.__game = { Game, State, Player, Look, camera, THREE, Gyro, Input,
+// precarga de modelos 3D con progreso real; el título aparece cuando terminan (o a los 25 s como máximo)
+{ const bar = document.querySelector('.ld-bar'); bar.classList.add('real'); const fill = bar.querySelector('i');
+  const hide = () => $('loader').classList.add('hide');
+  const to = setTimeout(hide, 25000);
+  Assets.load((k) => { fill.style.width = Math.round(k * 100) + '%'; $('ldTxt').textContent = 'CARGANDO MODELOS 3D · ' + Math.round(k * 100) + '%'; })
+    .then(() => { clearTimeout(to); setTimeout(hide, 250); }); }
+window.__game = { Game, State, Player, Look, camera, THREE, Gyro, Input, Assets,
   step(sec, dt = 1 / 30) { for (let k = 0; k < sec / dt; k++) { gameTime += dt; Game.world.update(gameTime, dt); } } };   // ganchos de depuración
 </script>
 <script>

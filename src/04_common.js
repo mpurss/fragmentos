@@ -35,6 +35,15 @@ function makeFragment(variant = 0, withLight = true) {
   halo.scale.setScalar(1.6);
   grp.add(shard, core, chip, halo);
   if (withLight) { const l = new THREE.PointLight(0x3aa0ff, 2.2, 6, 1.6); grp.add(l); grp.userData.light = l; }
+  // modelo de cristal (si cargó): reemplaza la geometría procedural, teñido del AZUL de los fragmentos
+  if (Assets.has('crystal')) {
+    const tint = (m) => { m.color = new THREE.Color(FRAG_BLUE).lerp(new THREE.Color(0xffffff), 0.35); m.emissive = new THREE.Color(0x0b55ff); m.emissiveIntensity = 0.55; m.roughness = 0.2; m.metalness = 0.1; };
+    const c1 = Assets.ownMaterials(Assets.get('crystal', { size: 0.95 }), tint); c1.position.y = -0.47;
+    const c2 = Assets.ownMaterials(Assets.get('crystal', { size: 0.34 }), tint); c2.position.y = -0.17;
+    shard.geometry.dispose(); shard.geometry = new THREE.BufferGeometry(); shard.add(c1);   // el grupo 'shard' sigue girando
+    chip.geometry.dispose(); chip.geometry = new THREE.BufferGeometry(); chip.add(c2);
+    core.visible = false;
+  }
   grp.userData.shard = shard;
   grp.userData.update = (t) => { shard.rotation.y = t * 0.9; core.rotation.y = -t * 1.3; chip.rotation.y = t * 1.6; grp.position.y = (grp.userData.baseY ?? grp.position.y) + Math.sin(t * 2) * 0.06; halo.material.opacity = 0.65 + Math.sin(t * 3) * 0.2; };
   return grp;
@@ -159,7 +168,7 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
   geo.rotateX(Math.PI / 2); // la extrusión va hacia abajo (Y negativo)
   // sombreado por profundidad: oscuro arriba en las paredes, teñido de azul cerca del fondo
   const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
-  const rock = new THREE.Color(rect ? 0xb9a58a : 0x5d6372), deep = new THREE.Color(0x05070d), lit = new THREE.Color(0x1d5bd8);
+  const rock = new THREE.Color(rect ? 0xc3c9d4 : 0x5d6372), deep = new THREE.Color(0x05070d), lit = new THREE.Color(0x1d5bd8);
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i); const k = clamp(-y / depth, 0, 1);
     const c = y > -0.05 ? rock.clone().multiplyScalar(0.85 + Math.random() * 0.25) : deep.clone().lerp(lit, Math.pow(k, 2.2));
@@ -178,7 +187,7 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
   }
   const light = new THREE.PointLight(0x3aa0ff, 14, 9, 1.3); light.position.set(0, -depth * 0.6, 0); grp.add(light);
   // placas fracturadas levantadas e inclinadas sobre el borde (superficie quebrada)
-  const lipMat = new THREE.MeshStandardMaterial({ color: rect ? 0xa8957b : 0x5d6372, flatShading: true, roughness: 0.95 });
+  const lipMat = new THREE.MeshStandardMaterial({ color: rect ? 0xaeb5c2 : 0x5d6372, flatShading: true, roughness: 0.95 });
   for (let i = 1; i < main.length - 1; i += 1) {
     const a = main[i], b = main[(i + 1) % main.length]; if (a.distanceTo(b) > 1.2) continue;
     const mid = a.clone().add(b).multiplyScalar(0.5); const along = b.clone().sub(a); const len2 = along.length();
@@ -190,7 +199,7 @@ function makeCrack({ radius = 4.2, depth = 2.2, len = 6.2, width = 1.15, seed = 
     plate.rotateX(-(0.12 + Math.random() * 0.28) * Math.sign(nrm.y || 1) * (Math.random() < 0.5 ? 1 : 0.4));
     plate.rotateZ(rand(-0.08, 0.08)); plate.castShadow = true; plate.receiveShadow = true; grp.add(plate);
   }
-  const debrisMat = M.std(rect ? 0x8a7a64 : 0x4a4f5c, { roughness: 1 });
+  const debrisMat = M.std(rect ? 0x9aa1ad : 0x4a4f5c, { roughness: 1 });
   for (let i = 0; i < (rect ? 0 : 30); i++) {   // en una pared no hay escombros 'apoyados' sobre la cara
     const v = main[Math.floor(Math.random() * main.length)];
     const d = new THREE.Mesh(jitter(new THREE.DodecahedronGeometry(rand(0.06, 0.22), 0), 0.03), debrisMat);
@@ -227,6 +236,7 @@ function pointInPoly(x, y, poly) {
 }
 
 /* ---------- PEZ 3D LOW-POLY (estilo de la referencia) ---------- */
+const FISH_AXIS = new THREE.Vector3(0.668, 0.279, 0.689);   // eje cabeza-cola del modelo de pez (calculado por PCA)
 const SPECIES = [
   { id: 'dorado', name: 'Pez Dorado', body: 0xff6a1f, stripe: 0xfff4ea, fin: 0xf2e6dc, stripes: 3, size: 0.42 },
   { id: 'payaso', name: 'Pez Payaso', body: 0xff8a00, stripe: 0xffffff, fin: 0x222222, stripes: 2, size: 0.34 },
@@ -273,8 +283,17 @@ function makeFish(sp, shiny = false) {
   if (shiny) { const f = makeFragment(4, false); f.scale.setScalar(0.55); f.position.set(0, 0, 0); grp.add(f); grp.userData.innerFrag = f; const l = new THREE.PointLight(0xfff0c0, 2.5, 5); grp.add(l); }
   grp.scale.setScalar(sp.size);
   grp.userData.tail = tailPivot; grp.userData.pecs = [pecL, pecR]; grp.userData.phase = rand(0, TAU);
+  // modelo de pez (si cargó): reemplaza el cuerpo procedural; el dorado conserva su textura, el resto se tiñe plano (low-poly)
+  let model = null;
+  if (Assets.has('fish')) {
+    model = Assets.get('fish', { axis: FISH_AXIS, size: 2.3, dim: 'z' });
+    if (shiny || sp.id !== 'dorado') Assets.ownMaterials(model, (m) => { m.map = null; m.color = new THREE.Color(shiny ? 0xfff2c0 : sp.body); m.flatShading = true; m.roughness = 0.5; if (shiny) { m.emissive = new THREE.Color(0xffe9a8); m.emissiveIntensity = 0.6; m.transparent = true; m.opacity = 0.85; } });
+    grp.children.forEach((c) => { if (c !== grp.userData.innerFrag && !c.isLight) c.visible = false; });
+    model.position.z = -0.3; grp.add(model);
+  }
   grp.userData.animate = (t, speed = 1) => {
     const ph = grp.userData.phase;
+    if (model) model.rotation.y = Math.sin(t * 7 * speed + ph) * 0.22;   // nado: ondulación del cuerpo
     tailPivot.rotation.y = Math.sin(t * 9 * speed + ph) * 0.55;
     body.rotation.y = Math.sin(t * 9 * speed + ph + 1.2) * 0.07;
     pecL.rotation.z = 0.3 + Math.sin(t * 6 + ph) * 0.3; pecR.rotation.z = -0.3 - Math.sin(t * 6 + ph) * 0.3;
