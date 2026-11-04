@@ -1,7 +1,9 @@
 # Fragmentos del Portal
 
 Experiencia web 3D inmersiva para celular, hecha con **Three.js** y los sensores del teléfono.
-Diseño y Programación Web II · Parcial 2 · Milagros Urssino
+Diseño y Programación Web II · Parcial 2
+
+**Equipo:** Milagros Urssino, Benjamin Azcona, Luna Etcheverry y Valentina Vacca
 
 ## Concepto
 Una grieta se abre en tu realidad. Para volver tenés que atravesar tres mundos conectados por portales y recuperar en cada uno un **fragmento azul**. Al final los tres fragmentos se fusionan, se abre el portal de regreso y volvés a tu realidad… aunque algo cruza con vos.
