@@ -1849,9 +1849,9 @@ class MuseumWorld extends BaseWorld {
     const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir); camDir.y = 0; camDir.normalize();
     const toDino = new THREE.Vector3(dp.x - Player.pos.x, 0, dp.z - Player.pos.z).normalize();
     const seen = camDir.dot(toDino) > 0.45;
-    if (!seen && Player.pos.z > -10 && dist > 3) {
+    if (Player.pos.z > -10 && dist > 2.2) {   // te sigue siempre mientras estés en el hall (más rápido si no lo mirás)
       const yawT = Math.atan2(-toPlayer.x, -toPlayer.z); d.rotation.y = damp(d.rotation.y, yawT, 2, dt);
-      dp.addScaledVector(toPlayer.normalize(), dt * 0.9); dp.z = Math.max(dp.z, -7.5); dp.x = clamp(dp.x, -4, 4);
+      dp.addScaledVector(toPlayer.normalize(), dt * (seen ? 0.55 : 1.1)); dp.z = Math.max(dp.z, -7.5); dp.x = clamp(dp.x, -4, 4);
       this.dinoT -= dt; if (this.dinoT <= 0) { this.dinoT = 0.9; Audio.sfx.step(dp.clone().setY(0), 0.9); haptic(15); }
       this.dinoHead.rotation.x = Math.sin(t * 2) * 0.08;
     }
